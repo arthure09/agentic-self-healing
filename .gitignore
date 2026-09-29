@@ -1,0 +1,35 @@
+# Secrets — hanya .env.example yang di-commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Output benchmark (data run mentah, bukan kode)
+benchmark/runs/*
+!benchmark/runs/.gitkeep
+
+# Node / Medusa
+node_modules/
+.medusa/
+dist/
+build/
+*.tsbuildinfo
+.yarn/
+.npm/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Log
+*.log

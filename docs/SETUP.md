@@ -30,7 +30,25 @@ region Indonesia (IDR), 1 gudang (stok 1.000 per varian), 2 opsi pengiriman, 5 k
 
 ## Layer 2 — observability
 
-(diisi di Stage 3)
+| Komponen | Image | Akses | Dicatat |
+|---|---|---|---|
+| postgres_exporter | `prometheuscommunity/postgres-exporter:v0.20.1` | internal (jaringan compose) | Stage 3, 2026-09-29 |
+| redis_exporter | `oliver006/redis_exporter:v1.92.1` | internal | Stage 3, 2026-09-29 |
+| cAdvisor | `gcr.io/cadvisor/cadvisor:v0.55.1` (housekeeping 5 s) | internal | Stage 3, 2026-09-29 |
+| node_exporter | `prom/node-exporter:v1.12.1` (`pid: host`, rootfs `/host`) | internal | Stage 3, 2026-09-29 |
+| Prometheus | `prom/prometheus:v3.15.0` (scrape & evaluasi 5 s, retensi 30 hari) | `127.0.0.1:9090` | Stage 3, 2026-09-29 |
+| Alertmanager | `prom/alertmanager:v0.34.1` | `127.0.0.1:9093` | Stage 3, 2026-09-29 |
+| Loki | `grafana/loki:3.7.8` (TSDB schema v13, filesystem, retensi 7 hari) | `127.0.0.1:3100` | Stage 3, 2026-09-29 |
+| Promtail | `grafana/promtail:3.6.11` (Docker service discovery, refresh 5 s) | internal | Stage 3, 2026-09-29 |
+| Grafana | `grafana/grafana:13.2.3` | `100.97.181.49:3000` (login wajib, anonim nonaktif) | Stage 3, 2026-09-29 |
+
+**Target scrape Prometheus (9):** prometheus, alertmanager, postgres, redis, cadvisor, node, loki, promtail, grafana.
+
+**Grafana:** datasource Prometheus, Loki, dan Alertmanager diprovisioning dari `observability/grafana/provisioning/`. Dashboard `Ringkasan Agentic` (uid `agentic-ringkasan`, folder `Agentic`, halaman beranda) berisi stat per skenario TC-01–TC-04, grafik PostgreSQL/Redis, status container, CPU/memori per container dan host, serta panel log aplikasi target dari Loki.
+
+**Label log Loki:** `container`, `service` (nama service compose), `project`, `stream`.
+
+**Akses UI internal** (Prometheus/Alertmanager hanya di localhost): lewat tunnel SSH, mis. `ssh -L 9090:127.0.0.1:9090 -L 9093:127.0.0.1:9093 areph09@100.97.181.49`, atau lewat Grafana Explore.
 
 ## alert-bridge
 

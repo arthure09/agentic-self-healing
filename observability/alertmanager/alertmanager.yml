@@ -1,0 +1,10 @@
+# Receiver sementara (tanpa tujuan). Webhook ke alert-bridge ditambahkan di Stage 6.
+route:
+  receiver: "null"
+  group_by: ["alertname", "scenario"]
+  group_wait: 0s
+  group_interval: 10s
+  repeat_interval: 1h
+
+receivers:
+  - name: "null"

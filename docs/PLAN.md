@@ -10,7 +10,7 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 |---|---|---|---|---|
 | 1 | Struktur repo | ✅ Selesai | 2026-09-29 | `Stage 1:` di git log |
 | 2 | Layer 1: aplikasi target | ✅ Selesai | 2026-09-29 | `Stage 2:` di git log |
-| 3 | Layer 2: observability | ⬜ Belum | — | — |
+| 3 | Layer 2: observability | ✅ Selesai | 2026-09-29 | `Stage 3:` di git log |
 | 4 | Alert rules per skenario | ⬜ Belum | — | — |
 | 5 | Chaos scripts dan reset | ⬜ Belum | — | — |
 | 6 | alert-bridge | ⬜ Belum | — | — |
@@ -99,3 +99,16 @@ Setiap rule punya label `scenario` (`tc01`..`tc04`) dan annotation yang jelas. P
   - `GET http://100.97.181.49:9000/app` → 200, login admin lewat API berhasil, `/admin/products` = 40 dan `/admin/orders` = 120.
   - `ss -tulpn`: `127.0.0.1:5432`, `127.0.0.1:6379`, `100.97.181.49:9000`. Port 9000 tidak terjangkau dari IP LAN.
   - Restart container: migrasi dan seed dilewati, `restarts=0`.
+
+### Stage 3
+- 9 service observability ditambahkan ke `docker-compose.yml`, semua image di-pin. Config ditulis baru di `observability/`.
+- Exporter tidak dipublikasikan ke host. Prometheus (9090), Alertmanager (9093), dan Loki (3100) hanya di `127.0.0.1`. Grafana (3000) hanya di IP Tailscale, dengan login wajib (kredensial di `.env`).
+- Alertmanager sementara memakai receiver `null`. Webhook ke alert-bridge ditambahkan di Stage 6. Folder `observability/prometheus/rules/` disiapkan untuk Stage 4.
+- Dashboard dibuat sebagai JSON statis `observability/grafana/dashboards/ringkasan.json` (19 panel).
+- Verifikasi:
+  - Prometheus: 9/9 target `up`.
+  - Loki berisi log dari 12 container. Lewat API query Grafana (`/api/ds/query`, datasource Loki), log `medusa-app`, `medusa-postgres`, dan `medusa-redis` muncul.
+  - Datasource Prometheus dan Loki `OK`. Alertmanager bisa di-query lewat proxy Grafana; endpoint `/health` tidak didukung oleh tipe datasource ini, dan itu normal.
+  - Akses Grafana tanpa login ditolak (401).
+- **Catatan untuk Stage 4 (TC-01):** `pg_stat_activity_count` dari exporter hanya menghitung backend klien per database (idle ≈ 3–4). View `v_connection_usage` menghitung semua baris `pg_stat_activity`, termasuk proses latar belakang (±5) dan pool Medusa yang sedang aktif. Ambang TC-01 akan memakai metrik exporter. Perlu diingat pula bahwa 3 slot dicadangkan untuk superuser (`superuser_reserved_connections`).
+- **Catatan:** Promtail sudah dinyatakan deprecated oleh Grafana (penggantinya Grafana Alloy). Tetap dipakai sesuai rencana, di-pin ke rilis terakhir 3.6.11. node_exporter berjalan di jaringan bridge, sehingga metrik jaringan yang dilaporkannya adalah milik namespace container, bukan host. CPU, memori, dan disk tetap milik host.

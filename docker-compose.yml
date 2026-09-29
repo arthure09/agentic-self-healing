@@ -1,0 +1,96 @@
+# Stack pengujian agent remediasi. Semua secret dibaca dari .env (lihat .env.example).
+# Docker melewati ufw: port internal di-bind ke 127.0.0.1, UI hanya ke IP Tailscale.
+name: agentic
+
+networks:
+  agentic-net:
+    driver: bridge
+
+volumes:
+  pgdata:
+
+services:
+  # ---------------------------------------------------------------------------
+  # Layer 1: aplikasi target
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16.15-alpine3.24
+    container_name: medusa-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    # max_connections=50 sengaja rendah agar TC-01 (connection pool exhaustion)
+    # mudah dipicu. Log lock wait/deadlock untuk TC-02.
+    command: >
+      postgres
+      -c max_connections=50
+      -c shared_buffers=128MB
+      -c log_lock_waits=on
+      -c deadlock_timeout=1s
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./app/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [agentic-net]
+
+  redis:
+    image: redis:7.4.11-alpine3.21
+    container_name: medusa-redis
+    restart: unless-stopped
+    # maxmemory 256mb untuk TC-03 (ambang alert 85%). noeviction dipilih agar
+    # flood benar-benar memenuhi memori dan menggagalkan write aplikasi, bukan
+    # diam-diam meng-evict key milik Medusa seperti allkeys-lru.
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy noeviction
+      --save ""
+      --appendonly no
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [agentic-net]
+
+  medusa:
+    build:
+      context: ./app/medusa
+    image: agentic/medusa:2.20.1
+    container_name: medusa-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${MEDUSA_JWT_SECRET}
+      COOKIE_SECRET: ${MEDUSA_COOKIE_SECRET}
+      STORE_CORS: http://localhost:8000
+      ADMIN_CORS: http://${TAILSCALE_IP}:9000
+      AUTH_CORS: http://${TAILSCALE_IP}:9000
+      MEDUSA_ADMIN_EMAIL: ${MEDUSA_ADMIN_EMAIL}
+      MEDUSA_ADMIN_PASSWORD: ${MEDUSA_ADMIN_PASSWORD}
+    ports:
+      - "${TAILSCALE_IP}:9000:9000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      # Migrasi + seed pertama kali butuh beberapa menit
+      start_period: 600s
+    networks: [agentic-net]

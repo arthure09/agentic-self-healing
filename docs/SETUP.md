@@ -16,7 +16,17 @@ Dicatat per stage di server `merapi`. Detail perangkat keras, jaringan, dan fire
 
 ## Layer 1 — aplikasi target
 
-(diisi di Stage 2)
+| Komponen | Versi / image | Catatan | Dicatat |
+|---|---|---|---|
+| PostgreSQL | `postgres:16.15-alpine3.24` (16.15) | `max_connections=50`, `shared_buffers=128MB`, `log_lock_waits=on`, `deadlock_timeout=1s`. Port `127.0.0.1:5432` | Stage 2, 2026-09-29 |
+| Redis | `redis:7.4.11-alpine3.21` (7.4.11) | `maxmemory 256mb`, `maxmemory-policy noeviction`, tanpa persistensi. Port `127.0.0.1:6379` | Stage 2, 2026-09-29 |
+| MedusaJS | 2.20.1 (backend + admin dashboard), image lokal `agentic/medusa:2.20.1` | Event bus, workflow engine, dan locking memakai Redis. Port `100.97.181.49:9000` (admin di `/app`) | Stage 2, 2026-09-29 |
+| Node.js (dalam image Medusa) | `node:22.23.3-alpine3.24` (v22.23.3), npm 10.9.9 | Dependensi dikunci dengan `app/medusa/package-lock.json` | Stage 2, 2026-09-29 |
+
+**Data seed** (`app/medusa/src/scripts/seed.ts`, deterministik dengan PRNG ber-seed tetap):
+region Indonesia (IDR), 1 gudang (stok 1.000 per varian), 2 opsi pengiriman, 5 kategori, 40 produk / 69 varian, 30 pelanggan tamu, 120 pesanan yang dibuat lewat alur checkout Medusa (cart → shipping → payment `pp_system_default` → complete).
+
+**Baseline idle:** 12 koneksi PostgreSQL aktif (24% dari 50) dengan Medusa berjalan tanpa beban; Redis ~2 MB.
 
 ## Layer 2 — observability
 

@@ -12,7 +12,7 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 | 2 | Layer 1: aplikasi target | ✅ Selesai | 2026-09-29 | `Stage 2:` di git log |
 | 3 | Layer 2: observability | ✅ Selesai | 2026-09-29 | `Stage 3:` di git log |
 | 4 | Alert rules per skenario | ⬜ Belum | — | — |
-| 5 | Chaos scripts dan reset | ⬜ Belum | — | — |
+| 5 | Chaos scripts dan reset | 🟡 Sebagian (TC-01 + reset teruji) | — | `Stage 5 (WIP):` di git log |
 | 6 | alert-bridge | ⬜ Belum | — | — |
 
 ## Aturan umum
@@ -112,3 +112,38 @@ Setiap rule punya label `scenario` (`tc01`..`tc04`) dan annotation yang jelas. P
   - Akses Grafana tanpa login ditolak (401).
 - **Catatan untuk Stage 4 (TC-01):** `pg_stat_activity_count` dari exporter hanya menghitung backend klien per database (idle ≈ 3–4). View `v_connection_usage` menghitung semua baris `pg_stat_activity`, termasuk proses latar belakang (±5) dan pool Medusa yang sedang aktif. Ambang TC-01 akan memakai metrik exporter. Perlu diingat pula bahwa 3 slot dicadangkan untuk superuser (`superuser_reserved_connections`).
 - **Catatan:** Promtail sudah dinyatakan deprecated oleh Grafana (penggantinya Grafana Alloy). Tetap dipakai sesuai rencana, di-pin ke rilis terakhir 3.6.11. node_exporter berjalan di jaringan bridge, sehingga metrik jaringan yang dilaporkannya adalah milik namespace container, bukan host. CPU, memori, dan disk tetap milik host.
+
+### Stage 5 (WIP, disimpan 2026-09-29)
+Dikerjakan lebih dulu daripada Stage 4 atas permintaan. Verifikasi "alert firing" diganti dengan pengecekan metrik Prometheus sampai rule Stage 4 tersedia.
+
+**Sudah ada:**
+- `chaos/common.py`: baca `.env`, tulis event JSONL (`ts_ms` epoch ms, `run_id`, `scenario`, `event`) ke `benchmark/runs/events.jsonl`, dan pidfile di `benchmark/runs/pids/`. `RUN_ID` bisa diberikan dari luar.
+- `chaos/tc01_connection_pool_exhaustion.py`: 45 koneksi simultan dengan `application_name=chaos_tc01`. Koneksi ditahan sampai `--hold`, SIGTERM, atau diputus server.
+- `chaos/tc02_deadlock_simulation.py`: dua transaksi dengan urutan kunci terbalik di skema terpisah `chaos`. Default 3 round.
+- `chaos/tc03_redis_memory_flood.py`: 10.000 task × 24 KiB ke list `queue:chaos:tasks` (≈91% dari 256 MiB). Berhenti dengan rapi bila Redis menolak write (OOM).
+- `chaos/tc04_container_kill.py`: `docker kill` `medusa-postgres` dan `medusa-redis`, lalu mengamati status selama 10 detik (termasuk apakah restart policy menghidupkannya kembali).
+- `chaos/requirements.txt` (psycopg 3.3.6, redis 8.1.0). Dijalankan dengan `.venv/bin/python` (venv di root, di-ignore).
+- `scripts/reset-env.sh`, berjalan sekitar 35 detik:
+  1. Hentikan chaos lewat pidfile.
+  2. Putus koneksi `chaos_%` dan drop skema `chaos`.
+  3. Restart postgres dan redis (Redis kosong karena tanpa persistensi), lalu medusa.
+  4. Tunggu semua healthy, metrik kembali ke baseline, dan tidak ada alert aktif di Prometheus maupun Alertmanager.
+  5. Catat `reset_start` dan `reset_done` ke `events.jsonl`.
+
+**Hasil uji:**
+- `reset-env.sh` pada stack normal: semua cek lolos.
+- TC-01: 43 koneksi terbuka dan 2 ditolak (`too many clients`). Exporter menunjukkan 46/50 (92%). `reset-env.sh` menghentikan script (`reason: signal`) dan stack kembali normal.
+- **Temuan TC-01:** Medusa tetap melayani `/store/products` (200, <0,1 s) karena pool koneksinya sudah terbuka sebelum chaos. Dampaknya hanya ke koneksi baru.
+
+**Sisa pekerjaan Stage 5:**
+- [ ] Uji TC-02: counter `pg_stat_database_deadlocks` naik, lalu reset.
+- [ ] Uji TC-03: memori Redis > 85%, lalu reset.
+- [ ] Uji TC-04: `pg_up` dan `redis_up` = 0. Cek apakah `restart: unless-stopped` menghidupkan container kembali. Bila ya, putuskan penggantinya (ubah restart policy atau pakai `docker stop`).
+- [ ] Commit final Stage 5 dan ubah status menjadi ✅.
+
+**Keputusan yang masih terbuka:**
+- Redis `noeviction` (sekarang) atau `allkeys-lru` (referensi).
+- TC-01 dibiarkan seperti sekarang atau diperberat agar Medusa ikut terdampak.
+- Stage 4 ditulis sendiri oleh pengguna atau dibuatkan draf.
+
+**Setelah Stage 4:** uji ulang TC-01 sampai TC-04 untuk memastikan alert asli firing (dan sampai ke alert-bridge setelah Stage 6).

@@ -1,10 +1,15 @@
-# Receiver sementara (tanpa tujuan). Webhook ke alert-bridge ditambahkan di Stage 6.
+# Semua alert diteruskan ke alert-bridge (Stage 6), yang mencatat timestamp
+# dan meneruskannya ke OpenClaw.
 route:
-  receiver: "null"
+  receiver: alert-bridge
   group_by: ["alertname", "scenario"]
   group_wait: 0s
   group_interval: 10s
   repeat_interval: 1h
 
 receivers:
-  - name: "null"
+  - name: alert-bridge
+    webhook_configs:
+      - url: http://alert-bridge:5001/alertmanager
+        send_resolved: true
+        max_alerts: 0

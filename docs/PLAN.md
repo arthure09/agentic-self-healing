@@ -13,7 +13,7 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 | 3 | Layer 2: observability | ✅ Selesai | 2026-09-29 | `Stage 3:` di git log |
 | 4 | Alert rules per skenario | ✅ Selesai | 2026-09-30 | `Stage 4:` di git log |
 | 5 | Chaos scripts dan reset | ✅ Selesai (verifikasi alert lengkap setelah Stage 4) | 2026-09-30 | `Stage 5:` di git log |
-| 6 | alert-bridge | ⬜ Belum | — | — |
+| 6 | alert-bridge | ✅ Selesai | 2026-09-30 | `Stage 6:` di git log |
 
 ## Aturan umum
 
@@ -180,3 +180,21 @@ Dikerjakan lebih dulu daripada Stage 4 atas permintaan. Verifikasi "alert firing
 
   - Tidak ada alarm salah: di setiap run hanya alert dengan `scenario` yang sesuai yang firing. Setelah reset, 0 alert aktif.
 - Alertmanager masih memakai receiver `null`, jadi alert belum diteruskan ke mana pun (Stage 6).
+
+### Stage 6 (2026-09-30)
+- `alert-bridge/app.py` ditulis ulang (porting dari referensi) memakai pustaka standar Python, tanpa Flask. Perbaikan dari catatan migrasi:
+  - Label timestamp dibetulkan: `bridge_received_ms`, bukan "diterima agent".
+  - Ada retry.
+  - Token kosong atau `CHANGE_ME` → `forward_skipped`.
+  - Alert resolved ikut dicatat.
+  - Duplikat dari pengiriman ulang Alertmanager tidak diteruskan dua kali.
+  - Port hanya di `127.0.0.1`.
+- Alertmanager: receiver `null` diganti webhook ke alert-bridge (`send_resolved: true`). Config dimuat dengan `POST /-/reload`.
+- Verifikasi (TC-04):
+  - `RedisDown` dan `PostgresDown` tercatat sebagai `alert_received` firing pada +9,8 s dan +14,8 s setelah injeksi.
+  - `alert_to_bridge_ms` = 7 ms, yaitu jeda dari `startsAt` sampai diterima bridge. Di Alertmanager, nilai `startsAt` sudah termasuk `for:`.
+  - Setelah reset, keduanya tercatat `resolved` beserta `ends_at_ms`.
+  - OpenClaw belum ada, sehingga setiap alert berakhir `forward_failed` (`URLError: timed out`, 3 percobaan) dan bridge tetap berjalan (`restarts=0`, `/health` ok).
+  - Awalnya penerusan berjalan antre di satu worker, sehingga alert kedua tertunda oleh timeout alert pertama. Diubah menjadi satu thread per alert. Setelah itu kedua alert gagal secara independen, masing-masing ±33 s setelah diterima.
+- **Catatan untuk Layer 3 (OpenClaw):** request dari container ke `host.docker.internal:18789` *timeout* (bukan *connection refused*). Artinya ufw membuang paket dari bridge Docker ke host, karena default incoming deny. Saat OpenClaw Gateway dipasang di host, perlu aturan ufw (butuh `sudo`), misalnya mengizinkan port 18789 hanya dari subnet jaringan compose `agentic-net`. Gateway juga harus listen di alamat yang bisa dijangkau dari container, bukan hanya `127.0.0.1`.
+- Jalur `forward_ok` belum bisa diuji sampai OpenClaw ada.

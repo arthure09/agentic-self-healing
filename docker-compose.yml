@@ -186,6 +186,30 @@ services:
       - alertmanager-data:/alertmanager
     ports:
       - "127.0.0.1:9093:9093"
+    depends_on: [alert-bridge]
+    networks: [agentic-net]
+
+  # alert-bridge: webhook Alertmanager -> benchmark/runs/alerts.jsonl + OpenClaw
+  # (Gateway berjalan di host, dijangkau lewat host.docker.internal).
+  alert-bridge:
+    build:
+      context: ./alert-bridge
+    image: agentic/alert-bridge:1.0.0
+    container_name: alert-bridge
+    restart: unless-stopped
+    # uid/gid pemilik repo agar file JSONL bisa dibaca/dihapus tanpa sudo
+    user: "1000:1000"
+    environment:
+      OPENCLAW_HOOK_URL: ${OPENCLAW_HOOK_URL}
+      OPENCLAW_HOOK_TOKEN: ${OPENCLAW_HOOK_TOKEN}
+      OPENCLAW_AGENT_ID: ${OPENCLAW_AGENT_ID}
+      ALERT_LOG_FILE: /data/alerts.jsonl
+    volumes:
+      - ./benchmark/runs:/data
+    ports:
+      - "127.0.0.1:5001:5001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks: [agentic-net]
 
   loki:

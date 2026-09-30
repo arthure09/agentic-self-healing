@@ -60,6 +60,17 @@ region Indonesia (IDR), 1 gudang (stok 1.000 per varian), 2 opsi pengiriman, 5 k
 
 Parameter default: TC-01 45 koneksi ditahan 600 s; TC-02 3 deadlock dengan jeda 2 s; TC-03 10.000 task × 24.400 byte (≈92% dari 256 MiB); TC-04 `docker kill` `medusa-postgres` dan `medusa-redis`. Durasi `reset-env.sh` ±35 s.
 
-## alert-bridge
+## alert-bridge (Stage 6)
 
-(diisi di Stage 6)
+| Komponen | Versi / image | Akses | Dicatat |
+|---|---|---|---|
+| alert-bridge | image lokal `agentic/alert-bridge:1.0.0` dari `python:3.13.15-slim-trixie`, hanya pustaka standar Python | `127.0.0.1:5001` (`POST /alertmanager`, `GET /health`) | Stage 6, 2026-09-30 |
+| Alertmanager receiver | webhook `http://alert-bridge:5001/alertmanager`, `send_resolved: true`, `group_by [alertname, scenario]`, `group_wait 0s` | — | Stage 6, 2026-09-30 |
+
+**Log:** `benchmark/runs/alerts.jsonl` (bind mount `/data`, ditulis sebagai uid 1000). Event yang dicatat:
+- `alert_received`: setiap alert firing/resolved, dengan field `bridge_received_ms`, `starts_at_ms`, `ends_at_ms`, `alert_to_bridge_ms`, dan `first_seen`.
+- `forward_ok`: `forward_sent_ms`, `forward_done_ms`, `http_status`.
+- `forward_failed`: `attempts`, `error`, `gave_up_ms`.
+- `forward_skipped`: token atau URL belum diisi.
+
+**Penerusan ke OpenClaw:** `POST $OPENCLAW_HOOK_URL` dengan `Authorization: Bearer $OPENCLAW_HOOK_TOKEN`, body `{message, agentId, name, deliver: true}`. Hanya alert firing yang diteruskan, sekali per `(fingerprint, startsAt)`. Satu thread per alert, 3 percobaan (timeout 10 s, jeda 1 s dan 2 s).

@@ -13,6 +13,7 @@ Dicatat per stage di server `merapi`. Detail perangkat keras, jaringan, dan fire
 | git | 2.53.0 | Stage 1, 2026-09-29 |
 | Python | 3.14.4 | Stage 1, 2026-09-29 |
 | OpenSSL (pembuatan secret `.env`) | 3.5.5 | Stage 1, 2026-09-29 |
+| Node.js | 24.21.0 (`nodejs 24.21.0-1nodesource1`, repo NodeSource `setup_24.x`), npm 11.19.0. Node 22 dari arsip Ubuntu tidak dipakai karena OpenClaw 2026.9.7 butuh `>=24.16.0` | Persiapan Layer 3, 2026-09-30 (dipasang pengguna) |
 
 ## Layer 1 — aplikasi target
 

@@ -12,7 +12,7 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 | 2 | Layer 1: aplikasi target | ✅ Selesai | 2026-09-29 | `Stage 2:` di git log |
 | 3 | Layer 2: observability | ✅ Selesai | 2026-09-29 | `Stage 3:` di git log |
 | 4 | Alert rules per skenario | ⬜ Belum | — | — |
-| 5 | Chaos scripts dan reset | 🟡 Sebagian (TC-01 + reset teruji) | — | `Stage 5 (WIP):` di git log |
+| 5 | Chaos scripts dan reset | ✅ Selesai (verifikasi alert menunggu Stage 4) | 2026-09-30 | `Stage 5:` di git log |
 | 6 | alert-bridge | ⬜ Belum | — | — |
 
 ## Aturan umum
@@ -113,7 +113,7 @@ Setiap rule punya label `scenario` (`tc01`..`tc04`) dan annotation yang jelas. P
 - **Catatan untuk Stage 4 (TC-01):** `pg_stat_activity_count` dari exporter hanya menghitung backend klien per database (idle ≈ 3–4). View `v_connection_usage` menghitung semua baris `pg_stat_activity`, termasuk proses latar belakang (±5) dan pool Medusa yang sedang aktif. Ambang TC-01 akan memakai metrik exporter. Perlu diingat pula bahwa 3 slot dicadangkan untuk superuser (`superuser_reserved_connections`).
 - **Catatan:** Promtail sudah dinyatakan deprecated oleh Grafana (penggantinya Grafana Alloy). Tetap dipakai sesuai rencana, di-pin ke rilis terakhir 3.6.11. node_exporter berjalan di jaringan bridge, sehingga metrik jaringan yang dilaporkannya adalah milik namespace container, bukan host. CPU, memori, dan disk tetap milik host.
 
-### Stage 5 (WIP, disimpan 2026-09-29)
+### Stage 5 (dimulai 2026-09-29, selesai 2026-09-30)
 Dikerjakan lebih dulu daripada Stage 4 atas permintaan. Verifikasi "alert firing" diganti dengan pengecekan metrik Prometheus sampai rule Stage 4 tersedia.
 
 **Sudah ada:**
@@ -135,11 +135,18 @@ Dikerjakan lebih dulu daripada Stage 4 atas permintaan. Verifikasi "alert firing
 - TC-01: 43 koneksi terbuka dan 2 ditolak (`too many clients`). Exporter menunjukkan 46/50 (92%). `reset-env.sh` menghentikan script (`reason: signal`) dan stack kembali normal.
 - **Temuan TC-01:** Medusa tetap melayani `/store/products` (200, <0,1 s) karena pool koneksinya sudah terbuka sebelum chaos. Dampaknya hanya ke koneksi baru.
 
-**Sisa pekerjaan Stage 5:**
-- [ ] Uji TC-02: counter `pg_stat_database_deadlocks` naik, lalu reset.
-- [ ] Uji TC-03: memori Redis > 85%, lalu reset.
-- [ ] Uji TC-04: `pg_up` dan `redis_up` = 0. Cek apakah `restart: unless-stopped` menghidupkan container kembali. Bila ya, putuskan penggantinya (ubah restart policy atau pakai `docker stop`).
-- [ ] Commit final Stage 5 dan ubah status menjadi ✅.
+**Hasil uji lanjutan (2026-09-30):**
+- **TC-02:** 3 round, masing-masing satu transaksi menjadi `deadlock_victim` dan yang lain commit. `pg_stat_database_deadlocks` naik 0 → 3 (terlihat di Prometheus dalam ≤ 10 s), dan PostgreSQL mencatat 3 kali `deadlock detected` di log. Counter ini **tidak kembali ke 0** setelah reset karena statistik PostgreSQL bertahan saat restart, jadi alert harus memakai `increase()`, bukan nilai absolut.
+- **TC-03:** 10.000 task masuk, memori Redis 92,5% (Prometheus sama), tanpa OOM. Dua bug diperbaiki:
+  1. OOM di redis-py 8 muncul sebagai `OutOfMemoryError` tanpa kata "OOM" di pesannya.
+  2. Payload 24 KiB + metadata jatuh ke kelas alokasi jemalloc 28 KiB, sehingga Redis penuh di task ke-9.274. Ukuran task kini dikunci 24.400 byte (`--item-bytes`).
+
+  Pada 92,5%, Medusa masih bisa membuat cart. Pada 100% (uji OOM), `POST /store/carts` gagal 500 dengan `OOM command not allowed`, dan script mencatat `oom_error` tanpa crash.
+- **TC-04:** kedua container `Exited (137)`, `restart_count=0` selama 20 s pengamatan. **`docker kill` tidak memicu restart policy `unless-stopped`**, jadi container tetap mati sampai dipulihkan dan time-to-action agent valid. `pg_up`/`redis_up` = 0, tetapi `up{job="postgres|redis"}` tetap 1 (yang di-scrape adalah exporter), sehingga alert TC-04 harus memakai `pg_up`/`redis_up` (atau cAdvisor). `/health` Medusa tetap 200 saat database mati; endpoint ini tidak mengecek dependensi.
+- `reset-env.sh` dijalankan setelah setiap TC dan selalu kembali ke kondisi awal (40 produk, 120 pesanan, 0 key chaos, tidak ada alert).
+- `benchmark/runs/events.jsonl` berisi 2 `inject_start` TC-03 tanpa `inject_done`, dari run yang crash sebelum perbaikan. File ini di-ignore git.
+
+**Verifikasi yang ditunda:** "alert yang benar firing di Alertmanager" diuji ulang setelah rule Stage 4 ada.
 
 **Keputusan yang masih terbuka:**
 - Redis `noeviction` (sekarang) atau `allkeys-lru` (referensi).

@@ -50,6 +50,16 @@ region Indonesia (IDR), 1 gudang (stok 1.000 per varian), 2 opsi pengiriman, 5 k
 
 **Akses UI internal** (Prometheus/Alertmanager hanya di localhost): lewat tunnel SSH, mis. `ssh -L 9090:127.0.0.1:9090 -L 9093:127.0.0.1:9093 areph09@100.97.181.49`, atau lewat Grafana Explore.
 
+## Chaos tooling (Stage 5)
+
+| Komponen | Versi | Catatan | Dicatat |
+|---|---|---|---|
+| Python venv (`.venv/`) | Python 3.14.4 | dibuat dari `chaos/requirements.txt` | Stage 5, 2026-09-30 |
+| psycopg | 3.3.6 (`psycopg[binary]`) | klien PostgreSQL untuk TC-01, TC-02 | Stage 5, 2026-09-30 |
+| redis-py | 8.1.0 | klien Redis untuk TC-03 | Stage 5, 2026-09-30 |
+
+Parameter default: TC-01 45 koneksi ditahan 600 s; TC-02 3 deadlock dengan jeda 2 s; TC-03 10.000 task × 24.400 byte (≈92% dari 256 MiB); TC-04 `docker kill` `medusa-postgres` dan `medusa-redis`. Durasi `reset-env.sh` ±35 s.
+
 ## alert-bridge
 
 (diisi di Stage 6)

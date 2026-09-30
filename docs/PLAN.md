@@ -15,6 +15,27 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 | 5 | Chaos scripts dan reset | ✅ Selesai (verifikasi alert lengkap setelah Stage 4) | 2026-09-30 | `Stage 5:` di git log |
 | 6 | alert-bridge | ✅ Selesai | 2026-09-30 | `Stage 6:` di git log |
 
+## ▶ Lanjutkan dari sini (ditandai 2026-09-30)
+
+Stage 1–6 selesai. Persiapan Layer 3 sudah dimulai:
+- ✅ Node.js 24.21.0 dipasang pengguna (NodeSource).
+- ✅ OpenClaw 2026.9.7 terpasang di `~/.npm-global` tanpa sudo. Belum dikonfigurasi dan Gateway belum berjalan.
+
+**Langkah berikutnya (disepakati):**
+1. Tulis draf rencana **Stage 7–10** di file ini dengan format yang sama seperti Stage 1–6, lalu berhenti untuk direview pengguna:
+   - Stage 7: OpenClaw Gateway + satu model AI (Gemini atau Qwen).
+   - Stage 8: aturan ufw port 18789 (butuh sudo) + sambungkan alert-bridge ke OpenClaw.
+   - Stage 9: tool wrapper dan skill remediasi TC-01..TC-04, dengan batasan perintah (guardrail).
+   - Stage 10: benchmark berulang dan pengukuran metrik.
+2. Setelah rencana disetujui, baru setup OpenClaw.
+
+**Menunggu dari pengguna:**
+- Kunci API Gemini (aistudio.google.com) atau Qwen (DashScope). Diisi langsung ke `.env`, jangan ditempel di chat.
+- Izin sudo untuk aturan ufw (Stage 8).
+- Nanti: Ollama + DeepSeek di PC RTX 5090, bot Telegram, dan persetujuan dosen soal OpenClaw berjalan di host.
+
+**Keputusan yang masih terbuka:** Redis `noeviction` vs `allkeys-lru`; TC-01 diperberat atau tidak; ganti nama grup alert `example` → `agentic-chaos` (opsional).
+
 ## Aturan umum
 
 - Secrets hanya di `.env` (tidak di-commit). `.env.example` berisi placeholder.

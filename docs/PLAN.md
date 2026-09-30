@@ -11,8 +11,8 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 | 1 | Struktur repo | ✅ Selesai | 2026-09-29 | `Stage 1:` di git log |
 | 2 | Layer 1: aplikasi target | ✅ Selesai | 2026-09-29 | `Stage 2:` di git log |
 | 3 | Layer 2: observability | ✅ Selesai | 2026-09-29 | `Stage 3:` di git log |
-| 4 | Alert rules per skenario | ⬜ Belum | — | — |
-| 5 | Chaos scripts dan reset | ✅ Selesai (verifikasi alert menunggu Stage 4) | 2026-09-30 | `Stage 5:` di git log |
+| 4 | Alert rules per skenario | ✅ Selesai | 2026-09-30 | `Stage 4:` di git log |
+| 5 | Chaos scripts dan reset | ✅ Selesai (verifikasi alert lengkap setelah Stage 4) | 2026-09-30 | `Stage 5:` di git log |
 | 6 | alert-bridge | ⬜ Belum | — | — |
 
 ## Aturan umum
@@ -154,3 +154,29 @@ Dikerjakan lebih dulu daripada Stage 4 atas permintaan. Verifikasi "alert firing
 - Stage 4 ditulis sendiri oleh pengguna atau dibuatkan draf.
 
 **Setelah Stage 4:** uji ulang TC-01 sampai TC-04 untuk memastikan alert asli firing (dan sampai ke alert-bridge setelah Stage 6).
+
+### Stage 4 (2026-09-30)
+- `observability/prometheus/rules/alerts.yml` **ditulis oleh pengguna** secara bertahap dengan panduan. 5 rule dalam satu grup (nama grup masih `example`):
+
+| Alert | `scenario` | Ekspresi | `for` | severity |
+|---|---|---|---|---|
+| PostgresConnectionPoolExhaustion | tc01 | `sum(pg_stat_activity_count) / scalar(pg_settings_max_connections) > 0.85` | 10s | warning |
+| PostgresDeadlockDetected | tc02 | `sum(increase(pg_stat_database_deadlocks[1m])) > 0` | 0s | warning |
+| RedisMemoryHigh | tc03 | `redis_memory_used_bytes / redis_memory_max_bytes > 0.85` | 5s | warning |
+| PostgresDown | tc04 | `pg_up == 0` | 5s | critical |
+| RedisDown | tc04 | `redis_up == 0` | 5s | critical |
+
+- Dasar pemilihan: ambang 85% berada di antara baseline (≈6–25%) dan hasil chaos (TC-01 92–96%, TC-03 92,5%). TC-02 memakai `increase()` karena counter deadlock tidak kembali ke 0 setelah reset. TC-04 memakai `pg_up`/`redis_up`, karena `up{job}` mengukur exporter, bukan database.
+- Verifikasi:
+  - `promtool check rules`: `SUCCESS: 5 rules found`. Rule dimuat lewat `POST /-/reload`, semua `health=ok`.
+  - **Uji ulang TC-01..TC-04 tanpa agen (menutup verifikasi Stage 5).** Waktu = `startsAt` alert di Alertmanager dikurangi `inject_start` di `events.jsonl`:
+
+| TC | Alert yang firing | Waktu deteksi | Durasi reset |
+|---|---|---|---|
+| TC-04 | RedisDown, PostgresDown | +10 s, +15 s | 41 s |
+| TC-01 | PostgresConnectionPoolExhaustion ("96%") | +12 s | ±35 s |
+| TC-02 | PostgresDeadlockDetected | +2 s | 55 s (menunggu `increase[1m]` turun ke 0) |
+| TC-03 | RedisMemoryHigh ("92.55%") | +11 s | ±35 s |
+
+  - Tidak ada alarm salah: di setiap run hanya alert dengan `scenario` yang sesuai yang firing. Setelah reset, 0 alert aktif.
+- Alertmanager masih memakai receiver `null`, jadi alert belum diteruskan ke mana pun (Stage 6).

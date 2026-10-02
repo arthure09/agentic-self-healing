@@ -14,27 +14,27 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 | 4 | Alert rules per skenario | ✅ Selesai | 2026-09-30 | `Stage 4:` di git log |
 | 5 | Chaos scripts dan reset | ✅ Selesai (verifikasi alert lengkap setelah Stage 4) | 2026-09-30 | `Stage 5:` di git log |
 | 6 | alert-bridge | ✅ Selesai | 2026-09-30 | `Stage 6:` di git log |
+| 7 | OpenClaw Gateway + model Qwen (OpenRouter) | 📝 Draf, menunggu review | — | — |
+| 8 | ufw + alert-bridge → OpenClaw | 📝 Draf, menunggu review | — | — |
+| 9 | Tool wrapper, skill TC-01..TC-04, guardrail | 📝 Draf, menunggu review | — | — |
+| 10 | Benchmark dan metrik | 📝 Draf, menunggu review | — | — |
 
-## ▶ Lanjutkan dari sini (ditandai 2026-09-30)
+## ▶ Lanjutkan dari sini (ditandai 2026-10-02)
 
-Stage 1–6 selesai. Persiapan Layer 3 sudah dimulai:
+Stage 1–6 selesai. Persiapan Layer 3:
 - ✅ Node.js 24.21.0 dipasang pengguna (NodeSource).
 - ✅ OpenClaw 2026.9.7 terpasang di `~/.npm-global` tanpa sudo. Belum dikonfigurasi dan Gateway belum berjalan.
+- ✅ Jalur model: **OpenRouter** (bukan DashScope langsung). `OPENROUTER_API_KEY` sudah diisi di `.env` dan valid. Credits $5, batas pengeluaran key $20. OpenClaw punya provider `openrouter` bawaan (`docs/providers/openrouter.md` di paket OpenClaw).
+- ✅ Draf rencana Stage 7–10 ditulis (lihat di bawah).
 
-**Langkah berikutnya (disepakati):**
-1. Tulis draf rencana **Stage 7–10** di file ini dengan format yang sama seperti Stage 1–6, lalu berhenti untuk direview pengguna:
-   - Stage 7: OpenClaw Gateway + satu model AI (Gemini atau Qwen).
-   - Stage 8: aturan ufw port 18789 (butuh sudo) + sambungkan alert-bridge ke OpenClaw.
-   - Stage 9: tool wrapper dan skill remediasi TC-01..TC-04, dengan batasan perintah (guardrail).
-   - Stage 10: benchmark berulang dan pengukuran metrik.
-2. Setelah rencana disetujui, baru setup OpenClaw.
+**Langkah berikutnya:** pengguna me-review draf Stage 7–10. Setelah disetujui, mulai Stage 7.
 
 **Menunggu dari pengguna:**
-- Kunci API Gemini (aistudio.google.com) atau Qwen (DashScope). Diisi langsung ke `.env`, jangan ditempel di chat.
+- Review dan persetujuan draf Stage 7–10, termasuk pilihan model (lihat Stage 7).
 - Izin sudo untuk aturan ufw (Stage 8).
 - Nanti: Ollama + DeepSeek di PC RTX 5090, bot Telegram, dan persetujuan dosen soal OpenClaw berjalan di host.
 
-**Keputusan yang masih terbuka:** Redis `noeviction` vs `allkeys-lru`; TC-01 diperberat atau tidak; ganti nama grup alert `example` → `agentic-chaos` (opsional).
+**Keputusan yang masih terbuka:** Redis `noeviction` vs `allkeys-lru`; TC-01 diperberat atau tidak; ganti nama grup alert `example` → `agentic-chaos` (opsional); jumlah pengulangan benchmark (Stage 10).
 
 ## Aturan umum
 
@@ -98,6 +98,80 @@ Setiap rule punya label `scenario` (`tc01`..`tc04`) dan annotation yang jelas. P
 - Jalankan sebagai container di stack yang sama.
 
 **Verifikasi:** jalankan TC-04, lalu pastikan alert tercatat di log alert-bridge dengan timestamp.
+
+## Stage 7 — OpenClaw Gateway + model Qwen (draf)
+
+- Onboarding OpenClaw dengan `--auth-choice openrouter-api-key`, memakai `OPENROUTER_API_KEY` dari `.env`. Kunci tidak ditulis ke file yang di-commit.
+- Pilih satu model Qwen yang mendukung tool calling. Kandidat (harga OpenRouter per 1 juta token, input/output, dicek 2026-10-02):
+  - `qwen/qwen3.7-plus` ($0,32 / $1,28): usulan utama, seimbang antara kemampuan dan harga.
+  - `qwen/qwen3.8-flash` ($0,15 / $0,47): lebih murah, cadangan bila kualitas cukup.
+  - `qwen/qwen3-235b-a22b-2507` ($0,087 / $0,35): tanpa mode reasoning, paling hemat.
+- Matikan atau batasi reasoning (`thinking`) bila kualitas tetap cukup, karena token reasoning dihitung sebagai output.
+- Gateway di port 18789. Untuk tahap ini cukup listen di `127.0.0.1`. Bind ke alamat yang bisa dijangkau container dikerjakan di Stage 8.
+- Aktifkan `hooks` (`enabled: true`, `path: /hooks`, `allowedAgentIds: ["main"]`) dengan token = `OPENCLAW_HOOK_TOKEN` dari `.env`. Token hook harus berbeda dari token auth Gateway.
+- Gateway dijalankan sebagai service systemd **user** (tanpa sudo) agar tetap hidup setelah logout. Bila butuh `loginctl enable-linger`, minta izin dulu.
+- Catat versi, model, dan lokasi config di `docs/SETUP.md`.
+
+**Verifikasi:**
+- `openclaw` melaporkan Gateway sehat dan model terpilih aktif.
+- `curl` dari host: `POST http://127.0.0.1:18789/hooks/agent` dengan payload dummy → `200 {ok, runId}`, dan agent membalas.
+- Token salah → `401`.
+- Catat pemakaian token dan biaya satu run dummy (dashboard OpenRouter), lalu perbarui perkiraan biaya Stage 10.
+
+## Stage 8 — ufw + alert-bridge → OpenClaw (draf)
+
+- Gateway listen di alamat yang bisa dijangkau dari container (misalnya gateway bridge `agentic-net`), bukan `0.0.0.0` dan bukan IP LAN.
+- Aturan ufw (**butuh sudo, minta izin dulu**): izinkan TCP 18789 hanya dari subnet `agentic-net`.
+- Pastikan `OPENCLAW_HOOK_URL`, `OPENCLAW_HOOK_TOKEN`, dan `OPENCLAW_AGENT_ID` di `.env` cocok dengan config OpenClaw, lalu `docker compose up -d alert-bridge`.
+- Pertimbangkan `waitForCompletion: true` di payload hook, agar alert-bridge bisa mencatat kapan agent selesai (berguna untuk metrik Stage 10).
+
+**Verifikasi:**
+- Dari dalam container alert-bridge: request ke Gateway tidak lagi timeout.
+- Dari IP LAN dan Tailscale: port 18789 tidak terjangkau.
+- Jalankan TC-04. `alerts.jsonl` mencatat `forward_ok` (`http_status` 200), dan OpenClaw mencatat run agent baru untuk alert itu. Agent belum punya skill, jadi belum diharapkan memulihkan apa pun.
+- `reset-env.sh` tetap mengembalikan stack ke kondisi awal.
+
+## Stage 9 — Tool wrapper, skill TC-01..TC-04, guardrail (draf)
+
+Urutan sesuai rencana bimbingan 2026-09-18: satu tool dulu, baru skill lengkap.
+
+- **Tool wrapper** (`agent/tools/`): skrip kecil yang menjadi satu-satunya jalan agent menyentuh sistem. Contoh:
+  - Cek status container.
+  - Baca log container (dibatasi jumlah baris).
+  - Restart atau start container (hanya `medusa-postgres`, `medusa-redis`, dan `medusa-app`).
+  - Query koneksi PostgreSQL dan hentikan koneksi tertentu.
+  - Cek memori Redis dan hapus antrean tertentu.
+  - Semua kredensial dibaca dari `.env`, tidak pernah dikirim ke model.
+- **Guardrail:**
+  - Exec di OpenClaw dibatasi dengan allowlist (`exec-approvals`) ke tool wrapper saja. Perintah lain, termasuk `docker rm`, menghapus volume, `sudo`, dan `rm`, ditolak.
+  - Workspace agent terpisah dari repo.
+  - Isi alert diperlakukan sebagai data yang tidak dipercaya, sesuai catatan keamanan hooks OpenClaw.
+- **Audit log:** setiap pemanggilan tool dicatat ke `benchmark/runs/actions.jsonl` (`ts_ms`, `run_id`, tool, argumen, hasil, durasi).
+- **Skill** (`skills/tc0X-*/SKILL.md`), mengikuti nama di referensi: `tc01-connection-pool-healing`, `tc02-deadlock-resolution`, `tc03-redis-memory-flood`, `tc04-container-recovery`. Setiap skill menjelaskan pola ReAct (amati → putuskan → bertindak → verifikasi) dan kapan berhenti atau tidak bertindak.
+- Kerjakan satu skill per satu, langsung diuji dengan TC yang sesuai.
+
+**Verifikasi:**
+- Per TC: injeksi chaos → alert → agent → alert resolved **tanpa campur tangan manusia**. `actions.jsonl` berisi aksi yang masuk akal.
+- Uji guardrail: kirim pesan hook dummy yang menyuruh agent menjalankan perintah berbahaya → ditolak dan tercatat.
+- Uji false positive: hook dummy tanpa masalah nyata → agent memverifikasi dan tidak melakukan aksi pemulihan.
+
+## Stage 10 — Benchmark dan metrik (draf)
+
+- `benchmark/run.sh` (atau `.py`): satu run = `reset-env.sh` → injeksi TC → tunggu sampai alert resolved atau batas waktu (misalnya 10 menit) → simpan hasil. `RUN_ID` dibagikan ke chaos script, alert-bridge, dan audit log.
+- Metrik per run, dihitung dari `events.jsonl`, `alerts.jsonl`, dan `actions.jsonl`:
+  - Waktu deteksi: `inject_start` → `startsAt` alert.
+  - Waktu notifikasi: `startsAt` → `bridge_received_ms`, lalu → `forward_ok`.
+  - Time-to-action: `forward_ok` → aksi pertama agent.
+  - Waktu pemulihan (healing): `inject_start` → alert resolved.
+  - Berhasil atau gagal: alert resolved sebelum batas waktu dan stack sehat.
+  - Aksi salah atau false positive: aksi di luar skill yang sesuai, atau aksi pada hook tanpa masalah.
+  - Token dan biaya per run (OpenRouter).
+- Pembanding: run tanpa agent (baseline Stage 4, alert tidak pernah resolved sendiri untuk TC-04).
+- Jumlah pengulangan: **usulan 10 per TC (40 run)** dulu, bisa ditambah bila biaya dan waktu memungkinkan. Keputusan akhir pada pengguna atau dosen.
+- `benchmark/analyze.py`: ringkasan per TC (rata-rata, median, simpangan baku, tingkat keberhasilan) ke CSV atau Markdown untuk Bab 4.
+- Nanti: ulangi dengan model kedua (DeepSeek lokal via Ollama) memakai skill dan tool yang sama. Cukup ganti model atau `agentId`.
+
+**Verifikasi:** satu batch kecil (1 run per TC) berjalan otomatis dari awal sampai akhir dan menghasilkan tabel metrik. Setelah itu batch penuh.
 
 ## Catatan per stage
 

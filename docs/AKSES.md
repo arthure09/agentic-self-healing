@@ -26,7 +26,9 @@ Selama terminal SSH itu terbuka, alamat di bawah bisa dibuka di browser laptop.
 |---|---|---|
 | Prometheus | http://localhost:9090 | Metrik, status target, dan alert rules (menu Alerts) |
 | Alertmanager | http://localhost:9093 | Alert yang sedang aktif |
-| OpenClaw Dashboard (Control UI) | http://localhost:18789 | Chat dengan agent dan lihat run. Butuh token Gateway; jalankan `openclaw dashboard` di server untuk mendapatkan link login |
+| OpenClaw Dashboard (Control UI) | http://localhost:18789 | Chat dengan agent dan lihat run. Login pertama: lihat di bawah |
+
+**Login pertama ke OpenClaw Dashboard:** di server jalankan `openclaw dashboard --no-open`, lalu salin link sekali-pakai yang muncul ke browser laptop (tunnel harus aktif). Bila host di link berupa `127.0.0.1` atau `172.18.0.1`, ganti menjadi `localhost`. Setelah berhasil, browser itu tersimpan sebagai perangkat admin. Link kedaluwarsa dalam waktu singkat; jalankan ulang bila perlu. Sesi chat `main` masih memakai `openrouter/auto`; ketik `/model openrouter/qwen/qwen3.7-plus` sebelum mengobrol.
 
 Layanan lain tanpa tampilan web (cukup dicek dari server):
 

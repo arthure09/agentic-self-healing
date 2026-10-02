@@ -15,24 +15,24 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 | 5 | Chaos scripts dan reset | ✅ Selesai (verifikasi alert lengkap setelah Stage 4) | 2026-09-30 | `Stage 5:` di git log |
 | 6 | alert-bridge | ✅ Selesai | 2026-09-30 | `Stage 6:` di git log |
 | 7 | OpenClaw Gateway + model Qwen (OpenRouter) | ✅ Selesai (dikonfigurasi pengguna dengan panduan) | 2026-10-02 | `Stage 7:` di git log |
-| 8 | ufw + alert-bridge → OpenClaw | 📝 Draf, menunggu review | — | — |
+| 8 | ufw + alert-bridge → OpenClaw | ✅ Selesai (langkah OpenClaw dan ufw dijalankan pengguna) | 2026-10-02 | `Stage 8:` di git log |
 | 9 | Tool wrapper, skill TC-01..TC-04, guardrail | 📝 Draf, menunggu review | — | — |
 | 10 | Benchmark dan metrik | 📝 Draf, menunggu review | — | — |
 
 ## ▶ Lanjutkan dari sini (ditandai 2026-10-02)
 
-Stage 1–7 selesai. OpenClaw Gateway berjalan sebagai service systemd user di `127.0.0.1:18789`, agent `merapi`, model `openrouter/qwen/qwen3.7-plus`, hook `/hooks/agent` teruji. Detail di catatan Stage 7 dan `docs/SETUP.md`.
+Stage 1–8 selesai. Alert dari Alertmanager → alert-bridge → OpenClaw (`forward_ok`, HTTP 200) sudah teruji dengan TC-04. Eksekusi perintah agent masih **dikunci** (`tools.exec.security=deny`), jadi agent belum bisa memulihkan apa pun.
 
-**Langkah berikutnya: Stage 8.**
-1. Gateway harus bisa dijangkau dari container (bind ke alamat bridge `agentic-net`, bukan `0.0.0.0`/LAN).
-2. Aturan ufw TCP 18789 hanya dari subnet `agentic-net` (**butuh sudo, minta izin dulu**).
-3. `docker compose up -d alert-bridge` agar `OPENCLAW_AGENT_ID=merapi` terbaca, lalu uji TC-04 sampai `forward_ok`.
+**Langkah berikutnya: Stage 9.**
+1. Tool wrapper pertama (cek status container) dan allowlist exec, ganti `deny`.
+2. Draf 12 template prompt (noob, medium, pro × TC-01..TC-04) untuk direview pengguna. Detail di `docs/PROMPT-LEVELS.md`.
+3. Skill TC-01..TC-04 satu per satu, diuji dengan TC yang sesuai.
 
 **Menunggu dari pengguna:**
-- Izin sudo untuk aturan ufw (Stage 8).
+- Review template prompt (setelah drafnya ada).
 - Nanti: Ollama + DeepSeek di PC RTX 5090, bot Telegram, dan persetujuan dosen soal OpenClaw berjalan di host serta pemakaian OpenRouter (laporan bimbingan 2026-09-18 menyebut OpenRouter "tidak diperlukan").
 
-**Keputusan yang masih terbuka:** Redis `noeviction` vs `allkeys-lru`; TC-01 diperberat atau tidak; ganti nama grup alert `example` → `agentic-chaos` (opsional); jumlah pengulangan benchmark (Stage 10, usulan 10 per TC); sandbox eksekusi agent (plugin OpenShell Sandbox / MXC Sandbox Execution, dibahas di Stage 9).
+**Keputusan yang masih terbuka:** Redis `noeviction` vs `allkeys-lru`; TC-01 diperberat atau tidak; ganti nama grup alert `example` → `agentic-chaos` (opsional); jumlah pengulangan benchmark (Stage 10, usulan 10 per TC per level prompt); keputusan terkait level prompt ada di `docs/PROMPT-LEVELS.md`; sandbox eksekusi agent (plugin OpenShell Sandbox / MXC Sandbox Execution, dibahas di Stage 9); subnet `agentic-net` dikunci di `docker-compose.yml` atau tidak.
 
 ## Aturan umum
 
@@ -147,6 +147,7 @@ Urutan sesuai rencana bimbingan 2026-09-18: satu tool dulu, baru skill lengkap.
 - **Audit log:** setiap pemanggilan tool dicatat ke `benchmark/runs/actions.jsonl` (`ts_ms`, `run_id`, tool, argumen, hasil, durasi).
 - **Skill** (`skills/tc0X-*/SKILL.md`), mengikuti nama di referensi: `tc01-connection-pool-healing`, `tc02-deadlock-resolution`, `tc03-redis-memory-flood`, `tc04-container-recovery`. Setiap skill menjelaskan pola ReAct (amati → putuskan → bertindak → verifikasi) dan kapan berhenti atau tidak bertindak.
 - Kerjakan satu skill per satu, langsung diuji dengan TC yang sesuai.
+- Draf template tiga level prompt (noob, medium, pro). Detail di `docs/PROMPT-LEVELS.md`.
 
 **Verifikasi:**
 - Per TC: injeksi chaos → alert → agent → alert resolved **tanpa campur tangan manusia**. `actions.jsonl` berisi aksi yang masuk akal.
@@ -156,6 +157,7 @@ Urutan sesuai rencana bimbingan 2026-09-18: satu tool dulu, baru skill lengkap.
 ## Stage 10 — Benchmark dan metrik (draf)
 
 - `benchmark/run.sh` (atau `.py`): satu run = `reset-env.sh` → injeksi TC → tunggu sampai alert resolved atau batas waktu (misalnya 10 menit) → simpan hasil. `RUN_ID` dibagikan ke chaos script, alert-bridge, dan audit log.
+- Satu batch per level prompt (lihat `docs/PROMPT-LEVELS.md`).
 - Metrik per run, dihitung dari `events.jsonl`, `alerts.jsonl`, dan `actions.jsonl`:
   - Waktu deteksi: `inject_start` → `startsAt` alert.
   - Waktu notifikasi: `startsAt` → `bridge_received_ms`, lalu → `forward_ok`.
@@ -165,7 +167,7 @@ Urutan sesuai rencana bimbingan 2026-09-18: satu tool dulu, baru skill lengkap.
   - Aksi salah atau false positive: aksi di luar skill yang sesuai, atau aksi pada hook tanpa masalah.
   - Token dan biaya per run (OpenRouter).
 - Pembanding: run tanpa agent (baseline Stage 4, alert tidak pernah resolved sendiri untuk TC-04).
-- Jumlah pengulangan: **usulan 10 per TC (40 run)** dulu, bisa ditambah bila biaya dan waktu memungkinkan. Keputusan akhir pada pengguna atau dosen.
+- Jumlah pengulangan: **usulan 10 per TC per level prompt (3 × 4 × 10 = 120 run per model)** dulu, bisa ditambah bila biaya dan waktu memungkinkan. Keputusan akhir pada pengguna atau dosen.
 - `benchmark/analyze.py`: ringkasan per TC (rata-rata, median, simpangan baku, tingkat keberhasilan) ke CSV atau Markdown untuk Bab 4.
 - Nanti: ulangi dengan model kedua (DeepSeek lokal via Ollama) memakai skill dan tool yang sama. Cukup ganti model atau `agentId`.
 
@@ -309,3 +311,19 @@ Dikerjakan lebih dulu daripada Stage 4 atas permintaan. Verifikasi "alert firing
   - Plugin **OpenShell Sandbox / MXC Sandbox Execution** relevan dengan tuntutan proposal soal sandbox. Dibahas di Stage 9 atau dengan dosen.
   - Plugin `ollama-provider` dibutuhkan saat DeepSeek lokal disambungkan.
   - Gateway memuat 15 plugin bawaan (antara lain `browser`, `cua-computer`, `file-transfer`, `github`). Akses tool agent dibatasi di Stage 9.
+
+### Stage 8 (2026-10-02)
+- **Temuan keamanan sebelum menyambungkan alert-bridge:** default OpenClaw `tools.exec.security=full`, `ask=off` (`openclaw approvals get`), artinya agent bebas menjalankan perintah apa pun sebagai `areph09` (anggota grup docker, praktis setara root). Karena isi alert langsung menjadi input agent, exec **dikunci dulu** dengan `openclaw config set tools.exec.security deny`. Allowlist dibuat di Stage 9.
+- **Alamat Gateway:** di container, `host.docker.internal` mengarah ke `172.17.0.1` (docker0, sedang DOWN dan beda jaringan). Maka Gateway di-bind ke alamat host di `agentic-net`: `gateway.bind=custom`, `gateway.customBindHost=172.18.0.1`. OpenClaw otomatis tetap membuka `127.0.0.1`. Bind custom mewajibkan auth Gateway (sudah ada dari Stage 7).
+- **ufw (sudo, dijalankan pengguna):** TCP 18789 hanya dari `172.18.0.0/16` di interface `br-60cc89f9f66f` ke `172.18.0.1` (aturan [3]).
+- `.env`: `OPENCLAW_HOOK_URL=http://172.18.0.1:18789/hooks/agent`. alert-bridge dibuat ulang agar membaca URL dan `OPENCLAW_AGENT_ID=merapi`.
+- **Perbaikan biaya:** alert-bridge mengirim `deliver: true`. Akibatnya hasil setiap run diteruskan ke sesi `main`, yang lalu menjalankan satu putaran lagi (+14 ribu token) dengan model sesi itu, yaitu masih `openrouter/auto` dari wizard. Run TC-04 pertama menghabiskan $0,034. Diubah ke `deliver: false` (`alert-bridge/app.py`), image dinaikkan ke `agentic/alert-bridge:1.0.1`. Run kedua: $0,018 dan sesi `main` tidak tersentuh.
+- Verifikasi:
+  - `ss`: 18789 hanya di `127.0.0.1` dan `172.18.0.1`, tidak di IP LAN `10.28.14.176` maupun Tailscale `100.97.181.49`.
+  - Dari dalam container alert-bridge: `GET http://172.18.0.1:18789/` → `HTTP 200` (sebelumnya timeout).
+  - TC-04 (2 run): `RedisDown` dan `PostgresDown` → `forward_ok`, `http_status` 200, percobaan pertama, ±0,2–0,8 s dari diterima sampai respons Gateway. OpenClaw membuat satu run per alert (model `qwen/qwen3.7-plus`, status `ok`).
+  - Guardrail sementara bekerja: agent mencoba exec 8 kali (run 1) dan 7 kali (run 2), **semuanya ditolak** (`exec denied: security=deny`). Container tidak dihidupkan agent; yang menghidupkan adalah `reset-env.sh`.
+  - `reset-env.sh` setelah setiap run: semua cek OK, 0 alert aktif.
+- **Token per alert (run 2, satu alert):** ±20,6 ribu input dan ±2 ribu output. Run lain tercatat hanya ±2,2 ribu input, kemungkinan karena prompt cache; perlu dicek saat mengukur biaya Stage 10. Total pemakaian OpenRouter sampai akhir Stage 8: $0,054.
+- Catatan: nama interface `br-60cc…` dan subnet `172.18.0.0/16` ditentukan Docker. Bila jaringan dibuat ulang (`docker compose down`), ufw, `customBindHost`, dan `.env` harus disesuaikan, atau subnet dikunci di `docker-compose.yml`. `reset-env.sh` hanya me-restart container, jadi aman.
+- Sesi TUI `main` masih memakai `openrouter/auto`. Bila TUI dipakai, ketik `/model openrouter/qwen/qwen3.7-plus`.

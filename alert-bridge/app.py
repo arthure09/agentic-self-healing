@@ -109,7 +109,7 @@ def _forward(alert: dict, base: dict) -> None:
         "message": build_message(alert, base["bridge_received_ms"]),
         "agentId": AGENT_ID,
         "name": f"alert-{base['alertname']}",
-        "deliver": True,
+        "deliver": False,  # hasil cukup di sesi run; True memicu putaran tambahan di sesi main
     }).encode()
     last_error = None
     for attempt in range(1, RETRIES + 1):

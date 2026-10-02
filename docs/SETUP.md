@@ -66,7 +66,7 @@ Parameter default: TC-01 45 koneksi ditahan 600 s; TC-02 3 deadlock dengan jeda 
 
 | Komponen | Versi / image | Akses | Dicatat |
 |---|---|---|---|
-| alert-bridge | image lokal `agentic/alert-bridge:1.0.0` dari `python:3.13.15-slim-trixie`, hanya pustaka standar Python | `127.0.0.1:5001` (`POST /alertmanager`, `GET /health`) | Stage 6, 2026-09-30 |
+| alert-bridge | image lokal `agentic/alert-bridge:1.0.1` (1.0.0 di Stage 6; 1.0.1 di Stage 8: `deliver: false`) dari `python:3.13.15-slim-trixie`, hanya pustaka standar Python | `127.0.0.1:5001` (`POST /alertmanager`, `GET /health`) | Stage 6, 2026-09-30 |
 | Alertmanager receiver | webhook `http://alert-bridge:5001/alertmanager`, `send_resolved: true`, `group_by [alertname, scenario]`, `group_wait 0s` | — | Stage 6, 2026-09-30 |
 
 **Log:** `benchmark/runs/alerts.jsonl` (bind mount `/data`, ditulis sebagai uid 1000). Event yang dicatat:
@@ -75,7 +75,7 @@ Parameter default: TC-01 45 koneksi ditahan 600 s; TC-02 3 deadlock dengan jeda 
 - `forward_failed`: `attempts`, `error`, `gave_up_ms`.
 - `forward_skipped`: token atau URL belum diisi.
 
-**Penerusan ke OpenClaw:** `POST $OPENCLAW_HOOK_URL` dengan `Authorization: Bearer $OPENCLAW_HOOK_TOKEN`, body `{message, agentId, name, deliver: true}`. Hanya alert firing yang diteruskan, sekali per `(fingerprint, startsAt)`. Satu thread per alert, 3 percobaan (timeout 10 s, jeda 1 s dan 2 s).
+**Penerusan ke OpenClaw:** `POST $OPENCLAW_HOOK_URL` dengan `Authorization: Bearer $OPENCLAW_HOOK_TOKEN`, body `{message, agentId, name, deliver: false}` (Stage 8; sebelumnya `true`). Hanya alert firing yang diteruskan, sekali per `(fingerprint, startsAt)`. Satu thread per alert, 3 percobaan (timeout 10 s, jeda 1 s dan 2 s).
 
 ## OpenClaw Gateway (Stage 7)
 
@@ -84,8 +84,17 @@ Parameter default: TC-01 45 koneksi ditahan 600 s; TC-02 3 deadlock dengan jeda 
 | Config | `~/.openclaw/openclaw.json` (di luar repo; dibuat oleh `openclaw onboard`, Custom setup, mode Local) | Stage 7, 2026-10-02 |
 | Agent | id `merapi`, workspace `~/.openclaw/workspace` (terpisah dari repo) | Stage 7, 2026-10-02 |
 | Model | `openrouter/qwen/qwen3.7-plus` lewat provider `openrouter` bawaan, kunci dari `OPENROUTER_API_KEY` (`.env`). Harga OpenRouter 2026-10-02: $0,32 input / $1,28 output per 1 juta token | Stage 7, 2026-10-02 |
-| Gateway | port 18789, bind loopback (`127.0.0.1` dan `[::1]`), Tailscale off, secret Gateway plaintext dibuat otomatis | Stage 7, 2026-10-02 |
+| Gateway | port 18789, Tailscale off, secret Gateway plaintext dibuat otomatis. Stage 7: bind loopback. **Stage 8: `gateway.bind=custom`, `gateway.customBindHost=172.18.0.1`** → listening di `127.0.0.1` dan `172.18.0.1` saja | Stage 7–8, 2026-10-02 |
 | Service | systemd **user** `~/.config/systemd/user/openclaw-gateway.service` (runtime Node, `--max-old-space-size=8192`), lingering aktif untuk `areph09`. Log: `journalctl --user -u openclaw-gateway` dan `/tmp/openclaw/openclaw-YYYY-MM-DD.log` | Stage 7, 2026-10-02 |
 | Hooks | `hooks.enabled=true`, `path=/hooks`, `allowedAgentIds=["merapi"]`, token = `OPENCLAW_HOOK_TOKEN` (`.env`) | Stage 7, 2026-10-02 |
 | Tugas latar dimatikan | `agents.defaults.heartbeat.every="0m"`, `plugins.entries.memory-core.config.dreaming.enabled=false`, `skills.workshop.autonomous.mode=off` | Stage 7, 2026-10-02 |
 | Dilewati saat onboarding | channel chat, web search, skill dependencies, optional plugins, import memory | Stage 7, 2026-10-02 |
+| Exec agent | `tools.exec.security=deny` (sementara, semua perintah host ditolak; default OpenClaw adalah `full`/`ask=off`). Diganti allowlist di Stage 9 | Stage 8, 2026-10-02 |
+
+## Jaringan alert-bridge → OpenClaw (Stage 8)
+
+| Komponen | Nilai | Dicatat |
+|---|---|---|
+| Jaringan compose | `agentic_agentic-net`, subnet `172.18.0.0/16`, gateway `172.18.0.1`, interface host `br-60cc89f9f66f` (dibuat otomatis Docker; berubah bila jaringan dibuat ulang, misalnya `docker compose down`) | Stage 8, 2026-10-02 |
+| ufw | `sudo ufw allow in on br-60cc89f9f66f from 172.18.0.0/16 to 172.18.0.1 port 18789 proto tcp comment 'OpenClaw dari agentic-net'` | Stage 8, 2026-10-02 |
+| `.env` | `OPENCLAW_HOOK_URL=http://172.18.0.1:18789/hooks/agent`, `OPENCLAW_AGENT_ID=merapi` | Stage 8, 2026-10-02 |

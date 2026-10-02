@@ -28,7 +28,13 @@ Selama terminal SSH itu terbuka, alamat di bawah bisa dibuka di browser laptop.
 | Alertmanager | http://localhost:9093 | Alert yang sedang aktif |
 | OpenClaw Dashboard (Control UI) | http://localhost:18789 | Chat dengan agent dan lihat run. Login pertama: lihat di bawah |
 
-**Login pertama ke OpenClaw Dashboard:** di server jalankan `openclaw dashboard --no-open`, lalu salin link sekali-pakai yang muncul ke browser laptop (tunnel harus aktif). Bila host di link berupa `127.0.0.1` atau `172.18.0.1`, ganti menjadi `localhost`. Setelah berhasil, browser itu tersimpan sebagai perangkat admin. Link kedaluwarsa dalam waktu singkat; jalankan ulang bila perlu. Sesi chat `main` masih memakai `openrouter/auto`; ketik `/model openrouter/qwen/qwen3.7-plus` sebelum mengobrol.
+**Login pertama ke OpenClaw Dashboard:** di server jalankan
+
+```bash
+openclaw dashboard --json | python3 -c 'import sys,json; print(json.load(sys.stdin)["browserUrl"])'
+```
+
+lalu salin link sekali-pakai yang muncul ke browser laptop (tunnel harus aktif; ganti `127.0.0.1` menjadi `localhost` bila perlu). `openclaw dashboard --no-open` tidak mencetak link ini karena server tidak punya clipboard. Setelah berhasil, browser itu tersimpan sebagai perangkat admin. Link kedaluwarsa dalam waktu singkat; jalankan ulang bila perlu. Jangan bagikan link ini, karena berfungsi sebagai kunci admin. Sesi chat `main` masih memakai `openrouter/auto`; ketik `/model openrouter/qwen/qwen3.7-plus` sebelum mengobrol.
 
 Layanan lain tanpa tampilan web (cukup dicek dari server):
 

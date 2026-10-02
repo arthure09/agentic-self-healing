@@ -14,27 +14,25 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 | 4 | Alert rules per skenario | ✅ Selesai | 2026-09-30 | `Stage 4:` di git log |
 | 5 | Chaos scripts dan reset | ✅ Selesai (verifikasi alert lengkap setelah Stage 4) | 2026-09-30 | `Stage 5:` di git log |
 | 6 | alert-bridge | ✅ Selesai | 2026-09-30 | `Stage 6:` di git log |
-| 7 | OpenClaw Gateway + model Qwen (OpenRouter) | 📝 Draf, menunggu review | — | — |
+| 7 | OpenClaw Gateway + model Qwen (OpenRouter) | ✅ Selesai (dikonfigurasi pengguna dengan panduan) | 2026-10-02 | `Stage 7:` di git log |
 | 8 | ufw + alert-bridge → OpenClaw | 📝 Draf, menunggu review | — | — |
 | 9 | Tool wrapper, skill TC-01..TC-04, guardrail | 📝 Draf, menunggu review | — | — |
 | 10 | Benchmark dan metrik | 📝 Draf, menunggu review | — | — |
 
 ## ▶ Lanjutkan dari sini (ditandai 2026-10-02)
 
-Stage 1–6 selesai. Persiapan Layer 3:
-- ✅ Node.js 24.21.0 dipasang pengguna (NodeSource).
-- ✅ OpenClaw 2026.9.7 terpasang di `~/.npm-global` tanpa sudo. Belum dikonfigurasi dan Gateway belum berjalan.
-- ✅ Jalur model: **OpenRouter** (bukan DashScope langsung). `OPENROUTER_API_KEY` sudah diisi di `.env` dan valid. Credits $5, batas pengeluaran key $20. OpenClaw punya provider `openrouter` bawaan (`docs/providers/openrouter.md` di paket OpenClaw).
-- ✅ Draf rencana Stage 7–10 ditulis (lihat di bawah).
+Stage 1–7 selesai. OpenClaw Gateway berjalan sebagai service systemd user di `127.0.0.1:18789`, agent `merapi`, model `openrouter/qwen/qwen3.7-plus`, hook `/hooks/agent` teruji. Detail di catatan Stage 7 dan `docs/SETUP.md`.
 
-**Langkah berikutnya:** pengguna me-review draf Stage 7–10. Setelah disetujui, mulai Stage 7.
+**Langkah berikutnya: Stage 8.**
+1. Gateway harus bisa dijangkau dari container (bind ke alamat bridge `agentic-net`, bukan `0.0.0.0`/LAN).
+2. Aturan ufw TCP 18789 hanya dari subnet `agentic-net` (**butuh sudo, minta izin dulu**).
+3. `docker compose up -d alert-bridge` agar `OPENCLAW_AGENT_ID=merapi` terbaca, lalu uji TC-04 sampai `forward_ok`.
 
 **Menunggu dari pengguna:**
-- Review dan persetujuan draf Stage 7–10, termasuk pilihan model (lihat Stage 7).
 - Izin sudo untuk aturan ufw (Stage 8).
-- Nanti: Ollama + DeepSeek di PC RTX 5090, bot Telegram, dan persetujuan dosen soal OpenClaw berjalan di host.
+- Nanti: Ollama + DeepSeek di PC RTX 5090, bot Telegram, dan persetujuan dosen soal OpenClaw berjalan di host serta pemakaian OpenRouter (laporan bimbingan 2026-09-18 menyebut OpenRouter "tidak diperlukan").
 
-**Keputusan yang masih terbuka:** Redis `noeviction` vs `allkeys-lru`; TC-01 diperberat atau tidak; ganti nama grup alert `example` → `agentic-chaos` (opsional); jumlah pengulangan benchmark (Stage 10).
+**Keputusan yang masih terbuka:** Redis `noeviction` vs `allkeys-lru`; TC-01 diperberat atau tidak; ganti nama grup alert `example` → `agentic-chaos` (opsional); jumlah pengulangan benchmark (Stage 10, usulan 10 per TC); sandbox eksekusi agent (plugin OpenShell Sandbox / MXC Sandbox Execution, dibahas di Stage 9).
 
 ## Aturan umum
 
@@ -108,7 +106,7 @@ Setiap rule punya label `scenario` (`tc01`..`tc04`) dan annotation yang jelas. P
   - `qwen/qwen3-235b-a22b-2507` ($0,087 / $0,35): tanpa mode reasoning, paling hemat.
 - Matikan atau batasi reasoning (`thinking`) bila kualitas tetap cukup, karena token reasoning dihitung sebagai output.
 - Gateway di port 18789. Untuk tahap ini cukup listen di `127.0.0.1`. Bind ke alamat yang bisa dijangkau container dikerjakan di Stage 8.
-- Aktifkan `hooks` (`enabled: true`, `path: /hooks`, `allowedAgentIds: ["main"]`) dengan token = `OPENCLAW_HOOK_TOKEN` dari `.env`. Token hook harus berbeda dari token auth Gateway.
+- Aktifkan `hooks` (`enabled: true`, `path: /hooks`, `allowedAgentIds: ["merapi"]`) dengan token = `OPENCLAW_HOOK_TOKEN` dari `.env`. Token hook harus berbeda dari token auth Gateway.
 - Gateway dijalankan sebagai service systemd **user** (tanpa sudo) agar tetap hidup setelah logout. Bila butuh `loginctl enable-linger`, minta izin dulu.
 - Catat versi, model, dan lokasi config di `docs/SETUP.md`.
 
@@ -293,3 +291,21 @@ Dikerjakan lebih dulu daripada Stage 4 atas permintaan. Verifikasi "alert firing
   - Awalnya penerusan berjalan antre di satu worker, sehingga alert kedua tertunda oleh timeout alert pertama. Diubah menjadi satu thread per alert. Setelah itu kedua alert gagal secara independen, masing-masing ±33 s setelah diterima.
 - **Catatan untuk Layer 3 (OpenClaw):** request dari container ke `host.docker.internal:18789` *timeout* (bukan *connection refused*). Artinya ufw membuang paket dari bridge Docker ke host, karena default incoming deny. Saat OpenClaw Gateway dipasang di host, perlu aturan ufw (butuh `sudo`), misalnya mengizinkan port 18789 hanya dari subnet jaringan compose `agentic-net`. Gateway juga harus listen di alamat yang bisa dijangkau dari container, bukan hanya `127.0.0.1`.
 - Jalur `forward_ok` belum bisa diuji sampai OpenClaw ada.
+
+### Stage 7 (2026-10-02)
+- Dikonfigurasi **oleh pengguna** dengan panduan langkah demi langkah. Pilihan onboarding: Custom setup, Local gateway, workspace default `~/.openclaw/workspace`, port 18789, bind Loopback, Tailscale Off, secret Gateway plaintext. Kunci OpenRouter diambil dari env (`OPENROUTER_API_KEY` dari `.env`). Channel chat, web search, skill dependencies, optional plugins, dan import memory dilewati.
+- **Nama agent ternyata `merapi`, bukan `main`.** `hooks.allowedAgentIds` diisi `["merapi"]` dan `.env` diubah ke `OPENCLAW_AGENT_ID=merapi` (alert-bridge membacanya ulang di Stage 8).
+- Model awal dari wizard adalah `openrouter/auto` (model berganti-ganti, tidak cocok untuk benchmark), lalu diganti ke `openrouter/qwen/qwen3.7-plus`.
+- **Masalah saat pemasangan service:** `openclaw gateway install` menolak karena `~/.config` group-writable (`drwxrwxr-x`, umask 0002). Diperbaiki tanpa sudo: `chmod go-w ~/.config` dan `install -d -m 700 ~/.config/systemd ~/.config/systemd/user`, lalu `openclaw gateway install --force`. Gateway butuh ±17 s sampai `ready`.
+- **Tugas latar dimatikan** agar tidak ada pemanggilan model di luar alert dan perilaku agent tetap sama antar-run: heartbeat (`every: 0m`, sebelumnya 30 menit), Memory Dreaming (cron 03.00), dan Skill collection review (mingguan, bisa mengubah skill sendiri). Dicek dengan `openclaw cron list --all`.
+- Verifikasi:
+  - `systemctl --user is-active openclaw-gateway` = `active`. `ss` hanya menunjukkan `127.0.0.1:18789` dan `[::1]:18789`.
+  - `POST /hooks/agent` dengan token `.env` → `{"ok":true,"runId":…,"completion":{"status":"ok"}}` dalam 6,9 s (`waitForCompletion: true`, `deliver: false`).
+  - Token salah → `401`.
+  - `openclaw config validate` lolos.
+- **Biaya dan token:** total pemakaian OpenRouter sampai akhir Stage 7 $0,002 (termasuk tes wizard dan sesi TUI). Tes "balas OK" saja memakai **13.462 token input** dan 57 token output. Ini beban dasar prompt sistem OpenClaw per run, jadi run dengan alert sungguhan akan lebih besar. Perkiraan biaya Stage 10 diperbarui setelah Stage 9.
+- Catatan untuk nanti:
+  - Plugin **Diagnostics Prometheus** bisa mengirim metrik agent (run, token, durasi) ke Prometheus yang sudah ada. Kandidat untuk Stage 10.
+  - Plugin **OpenShell Sandbox / MXC Sandbox Execution** relevan dengan tuntutan proposal soal sandbox. Dibahas di Stage 9 atau dengan dosen.
+  - Plugin `ollama-provider` dibutuhkan saat DeepSeek lokal disambungkan.
+  - Gateway memuat 15 plugin bawaan (antara lain `browser`, `cua-computer`, `file-transfer`, `github`). Akses tool agent dibatasi di Stage 9.

@@ -14,7 +14,7 @@ Dicatat per stage di server `merapi`. Detail perangkat keras, jaringan, dan fire
 | Python | 3.14.4 | Stage 1, 2026-09-29 |
 | OpenSSL (pembuatan secret `.env`) | 3.5.5 | Stage 1, 2026-09-29 |
 | Node.js | 24.21.0 (`nodejs 24.21.0-1nodesource1`, repo NodeSource `setup_24.x`), npm 11.19.0. Node 22 dari arsip Ubuntu tidak dipakai karena OpenClaw 2026.9.7 butuh `>=24.16.0` | Persiapan Layer 3, 2026-09-30 (dipasang pengguna) |
-| OpenClaw | 2026.9.7 (commit `c074824`), `npm install -g openclaw@2026.9.7` **tanpa sudo** ke prefix user `~/.npm-global` (PATH ditambahkan di `~/.bashrc`). npm 11 memblokir install script secara default, jadi dipasang dengan `--allow-scripts=@google/genai,esbuild,koffi,protobufjs,openclaw`. Ukuran ±735 MB. Belum dikonfigurasi (`~/.openclaw` belum ada) dan Gateway belum berjalan | Persiapan Layer 3, 2026-09-30 |
+| OpenClaw | 2026.9.7 (commit `c074824`), `npm install -g openclaw@2026.9.7` **tanpa sudo** ke prefix user `~/.npm-global` (PATH ditambahkan di `~/.bashrc`). npm 11 memblokir install script secara default, jadi dipasang dengan `--allow-scripts=@google/genai,esbuild,koffi,protobufjs,openclaw`. Ukuran ±735 MB. Dikonfigurasi di Stage 7 (lihat bagian OpenClaw di bawah) | Persiapan Layer 3, 2026-09-30 |
 
 ## Layer 1 — aplikasi target
 
@@ -76,3 +76,16 @@ Parameter default: TC-01 45 koneksi ditahan 600 s; TC-02 3 deadlock dengan jeda 
 - `forward_skipped`: token atau URL belum diisi.
 
 **Penerusan ke OpenClaw:** `POST $OPENCLAW_HOOK_URL` dengan `Authorization: Bearer $OPENCLAW_HOOK_TOKEN`, body `{message, agentId, name, deliver: true}`. Hanya alert firing yang diteruskan, sekali per `(fingerprint, startsAt)`. Satu thread per alert, 3 percobaan (timeout 10 s, jeda 1 s dan 2 s).
+
+## OpenClaw Gateway (Stage 7)
+
+| Komponen | Nilai | Dicatat |
+|---|---|---|
+| Config | `~/.openclaw/openclaw.json` (di luar repo; dibuat oleh `openclaw onboard`, Custom setup, mode Local) | Stage 7, 2026-10-02 |
+| Agent | id `merapi`, workspace `~/.openclaw/workspace` (terpisah dari repo) | Stage 7, 2026-10-02 |
+| Model | `openrouter/qwen/qwen3.7-plus` lewat provider `openrouter` bawaan, kunci dari `OPENROUTER_API_KEY` (`.env`). Harga OpenRouter 2026-10-02: $0,32 input / $1,28 output per 1 juta token | Stage 7, 2026-10-02 |
+| Gateway | port 18789, bind loopback (`127.0.0.1` dan `[::1]`), Tailscale off, secret Gateway plaintext dibuat otomatis | Stage 7, 2026-10-02 |
+| Service | systemd **user** `~/.config/systemd/user/openclaw-gateway.service` (runtime Node, `--max-old-space-size=8192`), lingering aktif untuk `areph09`. Log: `journalctl --user -u openclaw-gateway` dan `/tmp/openclaw/openclaw-YYYY-MM-DD.log` | Stage 7, 2026-10-02 |
+| Hooks | `hooks.enabled=true`, `path=/hooks`, `allowedAgentIds=["merapi"]`, token = `OPENCLAW_HOOK_TOKEN` (`.env`) | Stage 7, 2026-10-02 |
+| Tugas latar dimatikan | `agents.defaults.heartbeat.every="0m"`, `plugins.entries.memory-core.config.dreaming.enabled=false`, `skills.workshop.autonomous.mode=off` | Stage 7, 2026-10-02 |
+| Dilewati saat onboarding | channel chat, web search, skill dependencies, optional plugins, import memory | Stage 7, 2026-10-02 |

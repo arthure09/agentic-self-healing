@@ -28,7 +28,10 @@ Stage 1–8 selesai. Stage 9 berjalan:
 - ✅ Tool tambahan (2026-10-05): `container-logs`, `container-restart` (hanya medusa-postgres/redis/app, tunggu healthy), `pg-connections` (ringkasan, cancel, terminate, terminate-app; koneksi medusa-app & postgres-exporter dilindungi lewat IP container), `redis-memory` (info + 10 key terbesar, delete satu key; awalan `bull:`, `RedisEventBusService:`, `sess:` dilindungi). Kode bersama di `agent/tools/_common.py`. Diuji manual: baca OK, guardrail menolak container/key/input terlarang, terminate-app & delete pada target dummy OK.
 - ✅ Skill `skills/tc01..tc04-*/SKILL.md` ditulis (pola amati → putuskan → bertindak → verifikasi → berhenti, termasuk "jangan bertindak" bila tidak ada masalah).
 
+- ✅ Uji TC-04 dengan agent (2026-10-05, `RUN_ID=s9-tc04-20261005T105011Z`, workspace lama tanpa system prompt pro, pesan alert-bridge lama): alert diterima +13 s, aksi pertama +17 s, `medusa-postgres` di-start +50 s, `medusa-redis` +61 s, semua healthy dan 0 alert ±+65 s. **Tanpa campur tangan manusia.** Dua run (PostgresDown, RedisDown) masing-masing ±31 ribu token input, 1,3–2 ribu output (±$0,012 per run). **Masalah:** kedua run memulihkan kedua container bersamaan, sehingga tiap container di-start oleh satu run lalu langsung di-restart lagi oleh run lain (`state_before: running`). Perlu diperbaiki sebelum benchmark. `reset-env.sh` sesudahnya OK.
+
 **Menunggu dari pengguna:**
+- Pilih perbaikan restart ganda TC-04.
 - Tambah 4 tool baru ke allowlist dan `skills.load.extraDirs` → folder `skills/` repo, restart gateway.
 - Setelah itu: uji TC-04 → TC-03 → TC-01 → TC-02 dengan agent, lalu uji false positive.
 - Review template prompt di `prompts/`.

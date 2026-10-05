@@ -1,8 +1,15 @@
-Alert {alertname} (severity {severity}) sejak {starts_at}: {summary}. {description}
-Dugaan: ada antrean (list) yang membengkak di medusa-redis (maxmemory 256 MB, policy noeviction).
-Jalankan skill tc03-redis-memory-flood:
-1. Cek status container dengan container-status.
-2. Cek pemakaian memori Redis dan cari key terbesar.
-3. Hapus hanya antrean yang bukan milik Medusa dan menjadi penyebab lonjakan.
-4. Verifikasi pemakaian memori kembali di bawah 85% dan medusa-app tetap sehat.
-Batasan: jangan FLUSHALL atau FLUSHDB, jangan hapus key milik Medusa, jangan restart Redis.
+Alert {alertname} (severity {severity}) aktif sejak {starts_at}.
+Ringkasan: {summary}
+Detail: {description}
+
+Konteks: medusa-redis memakai maxmemory 256mb dengan kebijakan noeviction. Saat penuh, Redis menolak semua penulisan baru (error OOM), sehingga Medusa gagal membuat cart dan memproses antrean kerjanya. Dugaan saya, ada satu key antrean yang membengkak.
+
+Pulihkan dengan skill tc03-redis-memory-flood:
+1. Jalankan container-status medusa-redis medusa-app, lalu redis-memory (keduanya hanya membaca).
+2. Dari daftar top, cari key yang ukurannya jauh lebih besar dari key lain. Key berawalan bull:, RedisEventBusService:, dan sess: milik Medusa (antrean kerja, event, dan sesi login), jadi bukan target.
+3. Hapus hanya key penyebab dengan redis-memory delete <key>, satu key per pemanggilan.
+4. Jalankan redis-memory lagi.
+
+Selesai bila: used_pct < 85, dan medusa-app tetap running dan healthy.
+
+Batasan: jangan hapus seluruh isi Redis dan jangan restart Redis. Redis berjalan tanpa persistensi, jadi keduanya ikut menghapus sesi dan antrean kerja Medusa. Jangan ubah maxmemory atau kebijakan memori, karena itu menutupi gejala tanpa menghapus penyebabnya. Bila target belum tercapai, laporkan kondisi terakhir apa adanya.

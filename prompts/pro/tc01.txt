@@ -1,8 +1,15 @@
-Alert {alertname} (severity {severity}) sejak {starts_at}: {summary}. {description}
-Dugaan: ada klien yang menahan banyak koneksi idle ke medusa-postgres (max_connections=50).
-Jalankan skill tc01-connection-pool-healing:
-1. Cek status container dengan container-status.
-2. Kelompokkan koneksi di pg_stat_activity per application_name dan state.
-3. Hentikan hanya koneksi idle milik klien yang berlebihan (pg_terminate_backend). Jangan hentikan koneksi milik Medusa atau exporter.
-4. Verifikasi pemakaian koneksi kembali di bawah 85% dan medusa-app tetap sehat.
-Batasan: jangan restart PostgreSQL, jangan ubah konfigurasi, jangan hapus data.
+Alert {alertname} (severity {severity}) aktif sejak {starts_at}.
+Ringkasan: {summary}
+Detail: {description}
+
+Konteks: medusa-postgres memakai max_connections=50 dan alert ini aktif bila koneksi di atas 85%. Dugaan saya, ada satu klien yang menahan banyak koneksi idle. Toko masih bisa dibuka karena Medusa sudah memegang koneksinya sendiri, tetapi koneksi baru (proses Medusa yang baru, admin, exporter) berisiko ditolak dengan "too many clients".
+
+Pulihkan dengan skill tc01-connection-pool-healing:
+1. Jalankan container-status medusa-postgres medusa-app, lalu pg-connections (keduanya hanya membaca).
+2. Dari daftar groups, cari grup yang jumlah koneksinya jauh lebih besar dari yang lain dan berstatus idle. Lihat client_container untuk memastikan grup itu bukan dari medusa-app atau postgres-exporter.
+3. Putus hanya koneksi milik grup itu: pg-connections terminate-app <application_name> bila namanya tidak kosong, atau pg-connections terminate <pid>... bila kosong. Koneksi Medusa dan exporter harus tetap utuh, agar toko dan pemantauan tidak terputus.
+4. Tunggu sekitar 5 detik, lalu jalankan pg-connections lagi.
+
+Selesai bila: client_connections ≤ 42 dari 50, dan medusa-app tetap running dan healthy. Bila klien yang sama membuka koneksi lagi, ulangi langkah 3 paling banyak 2 kali.
+
+Batasan: jangan restart PostgreSQL, karena restart memutus semua transaksi pelanggan yang sedang berjalan, bukan hanya klien penyebab. Jangan ubah max_connections atau konfigurasi lain, karena itu menutupi gejala tanpa menghentikan penyebabnya. Bila target belum tercapai, laporkan kondisi terakhir apa adanya.

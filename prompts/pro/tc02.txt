@@ -1,8 +1,17 @@
-Alert {alertname} (severity {severity}) sejak {starts_at}: {summary}. {description}
-Dugaan: dua transaksi mengunci baris yang sama dengan urutan terbalik di medusa-postgres.
-Jalankan skill tc02-deadlock-resolution:
-1. Cek status container dengan container-status.
-2. Cari transaksi yang masih menunggu lock (pg_stat_activity, pg_locks) dan baca log PostgreSQL untuk detail deadlock.
-3. Bila masih ada transaksi yang tertahan, batalkan hanya transaksi tersebut (pg_cancel_backend, lalu pg_terminate_backend bila perlu).
-4. Verifikasi tidak ada lagi transaksi yang menunggu lock dan counter deadlock tidak naik lagi.
-Batasan: jangan restart PostgreSQL, jangan ubah konfigurasi, jangan hapus data.
+Alert {alertname} (severity {severity}) aktif sejak {starts_at}.
+Ringkasan: {summary}
+Detail: {description}
+
+Konteks: ada transaksi di medusa-postgres yang saling mengunci baris yang sama dengan urutan terbalik. PostgreSQL mendeteksi deadlock sendiri dalam sekitar 1 detik dan membatalkan salah satu transaksinya. Jadi saat pesan ini sampai, deadlock-nya kemungkinan besar sudah selesai. Yang perlu dipastikan adalah tidak ada sesi yang masih tertahan, karena sesi tertahan bisa membuat pesanan gagal diproses.
+
+Pulihkan dengan skill tc02-deadlock-resolution:
+1. Jalankan container-status medusa-postgres medusa-app, pg-connections, dan container-logs medusa-postgres 100 (semuanya hanya membaca). Di log, cari baris "deadlock detected" untuk mengetahui query yang terlibat.
+2. Lihat waiting_or_idle_in_tx di hasil pg-connections.
+   - Kosong: deadlock sudah diselesaikan PostgreSQL. Jangan bertindak. Laporkan query yang terlibat dari log.
+   - Ada sesi dengan blocked_by tidak kosong, atau idle in transaction dengan xact_age_s > 30: sesi pemblokir (pid di blocked_by) perlu dihentikan.
+3. Bila perlu bertindak: pg-connections cancel <pid pemblokir>. Bila 5 detik kemudian sesi masih tertahan, pakai pg-connections terminate <pid pemblokir>. Cancel lebih dulu karena hanya membatalkan query tanpa memutus koneksi.
+4. Jalankan pg-connections lagi.
+
+Selesai bila: waiting_or_idle_in_tx kosong, deadlocks_total tidak bertambah dibanding pengamatan pertama, dan medusa-app tetap running dan healthy. Alert ini baru padam sendiri sekitar 1 menit setelah deadlock terakhir. Jangan bertindak hanya karena alert masih aktif.
+
+Batasan: jangan restart PostgreSQL, karena restart memutus semua transaksi pelanggan. Jangan hentikan sesi milik Medusa atau exporter. Jangan ubah atau hapus data di tabel mana pun. Bila target belum tercapai, laporkan kondisi terakhir apa adanya.

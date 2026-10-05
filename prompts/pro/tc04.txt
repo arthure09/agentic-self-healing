@@ -2,11 +2,11 @@ Alert {alertname} (severity {severity}) aktif sejak {starts_at}.
 Ringkasan: {summary}
 Detail: {description}
 
-Konteks: container database atau cache berhenti mendadak. Container yang dimatikan paksa tidak menyala sendiri, jadi Medusa tidak bisa membaca katalog atau menyimpan pesanan sampai dipulihkan. Kemungkinan medusa-postgres dan medusa-redis mati bersamaan. Alert PostgresDown dan RedisDown ditangani run terpisah yang bisa berjalan bersamaan dengan run ini.
+Konteks: container database atau cache berhenti mendadak. Container yang dimatikan paksa tidak menyala sendiri, jadi Medusa tidak bisa membaca katalog atau menyimpan pesanan sampai dipulihkan. Kemungkinan medusa-postgres dan medusa-redis mati bersamaan. Pesan ini hanya menyebut alert pertama; alert lain dari gangguan yang sama (PostgresDown atau RedisDown) tidak dikirim terpisah, jadi periksa dan pulihkan kedua container di run ini.
 
 Pulihkan dengan skill tc04-container-recovery:
 1. Jalankan container-status (hanya membaca) untuk melihat container mana yang tidak running.
-2. Untuk setiap container yang berhenti (exited atau dead), jalankan container-status <nama> sekali lagi tepat sebelum bertindak, lalu container-restart <nama>. Urutan: medusa-postgres, lalu medusa-redis. Lewati container yang sudah running, karena container-restart akan me-restart container yang berjalan, dan itu memutus layanan yang mungkin baru saja dipulihkan run lain.
+2. Untuk setiap container yang berhenti (exited atau dead), jalankan container-restart <nama>. Urutan: medusa-postgres, lalu medusa-redis. Lewati container yang sudah running dan healthy, karena container-restart akan me-restart container yang berjalan dan memutus layanan yang sehat.
 3. container-restart sudah menunggu sampai healthy. Bila medusa-app tidak running atau tidak healthy setelah database dan cache kembali, restart medusa-app satu kali.
 4. Jalankan container-status lagi.
 

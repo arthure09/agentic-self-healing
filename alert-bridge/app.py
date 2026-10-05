@@ -10,6 +10,12 @@ milidetik, lalu meneruskan alert firing ke OpenClaw lewat POST /hooks/agent.
 - Alertmanager mengirim ulang alert yang sama setiap group_interval. Alert
   diteruskan sekali per (fingerprint, startsAt); pengiriman ulang tetap dicatat
   dengan first_seen=false.
+- Satu gangguan = satu run agent: alert baru dari skenario yang masih punya
+  alert aktif (mis. RedisDown menyusul PostgresDown pada TC-04) tidak
+  diteruskan lagi, hanya dicatat sebagai forward_merged.
+- Pesan ke agent diambil dari template prompts/<PROMPT_LEVEL>/<scenario>.txt
+  (noob, medium, pro). Placeholder {alertname}, {severity}, {starts_at},
+  {summary}, {description} diisi dari data alert.
 - OpenClaw belum ada, token kosong, atau request gagal: dicatat sebagai event
   forward_skipped / forward_failed, tanpa membuat bridge crash.
 
@@ -22,7 +28,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOOK_URL = os.environ.get("OPENCLAW_HOOK_URL", "")
@@ -32,6 +38,9 @@ LOG_FILE = os.environ.get("ALERT_LOG_FILE", "/data/alerts.jsonl")
 PORT = int(os.environ.get("PORT", "5001"))
 RETRIES = int(os.environ.get("FORWARD_RETRIES", "3"))
 TIMEOUT_S = float(os.environ.get("FORWARD_TIMEOUT_S", "10"))
+PROMPT_DIR = os.environ.get("PROMPT_DIR", "/prompts")
+PROMPT_LEVEL = os.environ.get("PROMPT_LEVEL", "pro")
+MERGE_WINDOW_S = int(os.environ.get("MERGE_WINDOW_S", "300"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("alert-bridge")
@@ -39,6 +48,8 @@ log = logging.getLogger("alert-bridge")
 _write_lock = threading.Lock()
 _seen: set[tuple[str, str]] = set()
 _seen_lock = threading.Lock()
+# scenario -> (fingerprint alert aktif, ms run terakhir diteruskan, alertname pemicu)
+_active: dict[str, tuple[set[str], int, str]] = {}
 _in_flight = 0
 _stats_lock = threading.Lock()
 _stats = {"received": 0, "forward_ok": 0, "forward_failed": 0, "forward_skipped": 0}
@@ -66,21 +77,45 @@ def forward_configured() -> bool:
     return bool(HOOK_URL) and bool(HOOK_TOKEN) and HOOK_TOKEN != "CHANGE_ME"
 
 
-def build_message(alert: dict, received_ms: int) -> str:
+class _Keep(dict):
+    def __missing__(self, key):  # placeholder tak dikenal dibiarkan apa adanya
+        return "{" + key + "}"
+
+
+def build_message(alert: dict) -> tuple[str, str]:
+    """(pesan, file template). Label scenario tidak pernah ikut dikirim ke agent."""
     labels, ann = alert.get("labels", {}), alert.get("annotations", {})
-    received_iso = datetime.fromtimestamp(received_ms / 1000, timezone.utc).isoformat()
-    return (
-        f"[ALERT FIRING] {labels.get('alertname')} (skenario {labels.get('scenario', '-')}, "
-        f"severity {labels.get('severity', '-')})\n"
-        f"Ringkasan: {ann.get('summary', '')}\n"
-        f"Detail: {ann.get('description', '')}\n"
-        f"Alert mulai (Prometheus startsAt): {alert.get('startsAt')}\n"
-        f"Diterima alert-bridge: {received_iso} (epoch ms {received_ms})\n"
-        f"Fingerprint: {alert.get('fingerprint')}\n\n"
-        "Investigasi penyebabnya, lakukan remediasi sesuai skill untuk skenario ini, "
-        "lalu verifikasi bahwa layanan kembali normal. Laporkan setiap langkah "
-        "(Thought, Action, Observation) dan hasil akhirnya."
-    )
+    fields = _Keep(alertname=labels.get("alertname", ""), severity=labels.get("severity", ""),
+                   starts_at=alert.get("startsAt", ""), summary=ann.get("summary", ""),
+                   description=ann.get("description", ""))
+    path = os.path.join(PROMPT_DIR, PROMPT_LEVEL, f"{labels.get('scenario', '')}.txt")
+    try:
+        with open(path) as f:
+            return f.read().strip().format_map(fields), path
+    except OSError:  # skenario tanpa template: pesan netral, tanpa petunjuk
+        return f"Alert {fields['alertname']}: {fields['summary']}. {fields['description']}", "-"
+
+
+def claim_run(alert: dict, scenario: str | None, now: int) -> str | None:
+    """Catat alert firing; kembalikan alertname pemicu run aktif bila alert ini cukup digabung."""
+    if not scenario:
+        return None
+    fp = alert.get("fingerprint", "")
+    with _seen_lock:
+        fps, last_ms, trigger = _active.get(scenario, (set(), 0, ""))
+        if fps and now - last_ms < MERGE_WINDOW_S * 1000:
+            fps.add(fp)
+            return trigger
+        _active[scenario] = ({fp}, now, alert.get("labels", {}).get("alertname", ""))
+        return None
+
+
+def release(alert: dict, scenario: str | None) -> None:
+    with _seen_lock:
+        if scenario in _active:
+            _active[scenario][0].discard(alert.get("fingerprint", ""))
+            if not _active[scenario][0]:
+                del _active[scenario]
 
 
 def bump(key: str, delta: int = 1) -> None:
@@ -105,8 +140,10 @@ def _forward(alert: dict, base: dict) -> None:
         bump("forward_skipped")
         record("forward_skipped", **base, reason="OPENCLAW_HOOK_URL/TOKEN belum dikonfigurasi")
         return
+    message, template = build_message(alert)
+    base = {**base, "prompt_level": PROMPT_LEVEL, "prompt_file": template}
     body = json.dumps({
-        "message": build_message(alert, base["bridge_received_ms"]),
+        "message": message,
         "agentId": AGENT_ID,
         "name": f"alert-{base['alertname']}",
         "deliver": False,  # hasil cukup di sesi run; True memicu putaran tambahan di sesi main
@@ -150,6 +187,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self._reply(200, {"status": "ok", "forward_configured": forward_configured(),
                               "hook_url": HOOK_URL, "agent_id": AGENT_ID,
+                              "prompt_level": PROMPT_LEVEL,
                               "uptime_s": (now_ms() - _started_ms) // 1000,
                               "in_flight": _in_flight, **_stats})
         else:
@@ -187,8 +225,14 @@ class Handler(BaseHTTPRequestHandler):
             bump("received")
             record("alert_received", **base, first_seen=first_seen,
                    group_key=payload.get("groupKey"), summary=alert.get("annotations", {}).get("summary"))
+            if alert.get("status") == "resolved":
+                release(alert, labels.get("scenario"))
             if first_seen:
-                threading.Thread(target=forward, args=(alert, base), daemon=True).start()
+                merged_into = claim_run(alert, labels.get("scenario"), received_ms)
+                if merged_into:
+                    record("forward_merged", **base, merged_into=merged_into)
+                else:
+                    threading.Thread(target=forward, args=(alert, base), daemon=True).start()
 
         self._reply(200, {"ok": True, "alerts": len(payload.get("alerts", []))})
 
@@ -198,5 +242,8 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
-    log.info("alert-bridge :%d, forward ke %s (terkonfigurasi: %s)", PORT, HOOK_URL, forward_configured())
+    if PROMPT_LEVEL not in ("noob", "medium", "pro"):
+        raise SystemExit(f"PROMPT_LEVEL harus noob, medium, atau pro (sekarang: {PROMPT_LEVEL!r})")
+    log.info("alert-bridge :%d, forward ke %s (terkonfigurasi: %s), prompt level %s",
+             PORT, HOOK_URL, forward_configured(), PROMPT_LEVEL)
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

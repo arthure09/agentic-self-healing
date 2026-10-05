@@ -194,7 +194,7 @@ services:
   alert-bridge:
     build:
       context: ./alert-bridge
-    image: agentic/alert-bridge:1.0.1
+    image: agentic/alert-bridge:1.1.0
     container_name: alert-bridge
     restart: unless-stopped
     # uid/gid pemilik repo agar file JSONL bisa dibaca/dihapus tanpa sudo
@@ -204,8 +204,10 @@ services:
       OPENCLAW_HOOK_TOKEN: ${OPENCLAW_HOOK_TOKEN}
       OPENCLAW_AGENT_ID: ${OPENCLAW_AGENT_ID}
       ALERT_LOG_FILE: /data/alerts.jsonl
+      PROMPT_LEVEL: ${PROMPT_LEVEL:-pro}
     volumes:
       - ./benchmark/runs:/data
+      - ./prompts:/prompts:ro
     ports:
       - "127.0.0.1:5001:5001"
     extra_hosts:

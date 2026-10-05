@@ -66,7 +66,7 @@ Parameter default: TC-01 45 koneksi ditahan 600 s; TC-02 3 deadlock dengan jeda 
 
 | Komponen | Versi / image | Akses | Dicatat |
 |---|---|---|---|
-| alert-bridge | image lokal `agentic/alert-bridge:1.0.1` (1.0.0 di Stage 6; 1.0.1 di Stage 8: `deliver: false`) dari `python:3.13.15-slim-trixie`, hanya pustaka standar Python | `127.0.0.1:5001` (`POST /alertmanager`, `GET /health`) | Stage 6, 2026-09-30 |
+| alert-bridge | image lokal `agentic/alert-bridge:1.1.0` (1.0.0 di Stage 6; 1.0.1 di Stage 8: `deliver: false`; 1.1.0 di Stage 9: template `prompts/<PROMPT_LEVEL>/`, alert per skenario digabung) dari `python:3.13.15-slim-trixie`, hanya pustaka standar Python | `127.0.0.1:5001` (`POST /alertmanager`, `GET /health`) | Stage 6, 2026-09-30 |
 | Alertmanager receiver | webhook `http://alert-bridge:5001/alertmanager`, `send_resolved: true`, `group_by [alertname, scenario]`, `group_wait 0s` | — | Stage 6, 2026-09-30 |
 
 **Log:** `benchmark/runs/alerts.jsonl` (bind mount `/data`, ditulis sebagai uid 1000). Event yang dicatat:
@@ -82,7 +82,7 @@ Parameter default: TC-01 45 koneksi ditahan 600 s; TC-02 3 deadlock dengan jeda 
 | Komponen | Nilai | Dicatat |
 |---|---|---|
 | Config | `~/.openclaw/openclaw.json` (di luar repo; dibuat oleh `openclaw onboard`, Custom setup, mode Local) | Stage 7, 2026-10-02 |
-| Agent | id `merapi`, workspace `~/.openclaw/workspace` (terpisah dari repo) | Stage 7, 2026-10-02 |
+| Agent | id `merapi`, workspace `~/.openclaw/workspace-merapi` (terpisah dari repo; `AGENTS.md` = `prompts/system/pro.md`) | Stage 7, 2026-10-02; workspace diganti 2026-10-05 |
 | Model | `openrouter/qwen/qwen3.7-plus` lewat provider `openrouter` bawaan, kunci dari `OPENROUTER_API_KEY` (`.env`). Harga OpenRouter 2026-10-02: $0,32 input / $1,28 output per 1 juta token | Stage 7, 2026-10-02 |
 | Gateway | port 18789, Tailscale off, secret Gateway plaintext dibuat otomatis. Stage 7: bind loopback. **Stage 8: `gateway.bind=custom`, `gateway.customBindHost=172.18.0.1`** → listening di `127.0.0.1` dan `172.18.0.1` saja | Stage 7–8, 2026-10-02 |
 | Service | systemd **user** `~/.config/systemd/user/openclaw-gateway.service` (runtime Node, `--max-old-space-size=8192`), lingering aktif untuk `areph09`. Log: `journalctl --user -u openclaw-gateway` dan `/tmp/openclaw/openclaw-YYYY-MM-DD.log` | Stage 7, 2026-10-02 |

@@ -43,8 +43,12 @@ Stage 1–8 selesai. Stage 9 berjalan:
   Catatan: TC-01 terdeteksi lebih lambat (+37 s) dibanding uji Stage 4 (+12 s); dicek lagi di Stage 10. Agent TC-01 tidak mengecek `medusa-app` di akhir (langkah verifikasi skill dilewati). Skrip chaos TC-01 berhenti sendiri (`terminated_by_server`).
 - ✅ **Uji false positive**: 2 alert palsu (PostgresDown, PostgresConnectionPoolExhaustion) dikirim ke alert-bridge saat sistem sehat. Agent hanya memanggil `container-status` dan `pg-connections`, **tidak ada aksi pemulihan**, container tidak di-restart. Token 3,5–4,2k in per run.
 - Uji guardrail Stage 9 sudah lolos sebelumnya (`exec denied: allowlist miss`). **Verifikasi Stage 9 terpenuhi** untuk setup lama. Sisa: sambungkan template + gabungkan alert di alert-bridge, pasang system prompt pro, uji ulang singkat.
+- ✅ **alert-bridge 1.1.0 (2026-10-05):** pesan ke agent diambil dari `prompts/<PROMPT_LEVEL>/<scenario>.txt` (`PROMPT_LEVEL` di `.env`, default `pro`; folder `prompts/` di-mount read-only). Label `scenario` dan kalimat "sesuai skill" tidak lagi dikirim ke agent. Alert baru dari skenario yang masih punya alert aktif (≤ 300 s, `MERGE_WINDOW_S`) tidak memicu run baru, dicatat `forward_merged`. `forward_ok` mencatat `prompt_level` dan `prompt_file`. Self-check: `python3 alert-bridge/test_app.py`.
+- ✅ **System prompt pro dipasang (2026-10-05):** workspace khusus `~/.openclaw/workspace-merapi` (`agents.entries.merapi.workspace`). `AGENTS.md` = salinan `prompts/system/pro.md` (**salin ulang bila file itu diubah**); `IDENTITY.md`, `SOUL.md`, `USER.md` diisi singkat dan netral agar tidak diisi template bawaan; tanpa `BOOTSTRAP.md`. Agent `main` tetap di `~/.openclaw/workspace`.
+- Prompt pro TC-04 dan system prompt disesuaikan: satu run menangani semua alert dari gangguan yang sama.
+
 **Menunggu dari pengguna:**
-- Opsi 2 (gabungkan alert jadi satu run) dikerjakan bersama penyambungan template di alert-bridge, menunggu persetujuan.
+- Uji ulang singkat sekali per TC dengan setup baru (level pro, plus satu TC level noob), cek satu run per TC-04 dan baris `STATUS:`.
 - Review template prompt di `prompts/`.
 - Nanti: Ollama + DeepSeek di PC RTX 5090, bot Telegram, dan persetujuan dosen soal OpenClaw berjalan di host serta pemakaian OpenRouter (laporan bimbingan 2026-09-18 menyebut OpenRouter "tidak diperlukan").
 

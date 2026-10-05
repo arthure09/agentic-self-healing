@@ -24,7 +24,7 @@ Contoh ini hanya ilustrasi. Teks resmi ada di file template (lihat di bawah).
 
 - **Template:** folder `prompts/` dengan subfolder per level: `prompts/noob/`, `prompts/medium/`, `prompts/pro/`. Setiap subfolder berisi `tc01.txt`..`tc04.txt`, jadi totalnya 12 teks.
 - **Placeholder:** diisi alert-bridge dari data alert. Medium memakai `{alertname}`. Pro memakai `{alertname}`, `{severity}`, `{starts_at}`, `{summary}`, dan `{description}`. Noob tidak memakai placeholder.
-- **Pembuatan:** draf dibuat 2026-10-05 (Stage 9). Template level pro menyebut nama skill dan tool `container-status`. Tool lain disebut sebagai langkah, karena belum dibuat. **Status: menunggu review pengguna**, belum dipakai alert-bridge.
+- **Pembuatan:** draf dibuat 2026-10-05 (Stage 9). Template level pro menyebut nama skill dan tool `container-status`. Tool lain disebut sebagai langkah, karena belum dibuat. Dipakai alert-bridge sejak 1.1.0 (2026-10-05).
 - **System prompt (2026-10-05):** keputusan dosen, system prompt juga punya level. Baru versi pro: `prompts/system/pro.md`. Noob dan medium ditunda sampai keputusan dosen. Bagian "Laporan akhir" (`STATUS:`) adalah alat ukur, wajib di semua level, disimpan terpisah di `prompts/system/_report-format.md`. Belum dipasang ke workspace OpenClaw.
 - **Pemeriksaan:** `python3 prompts/check_prompts.py` (kebocoran kata `chaos`, isi noob/medium sesuai definisi, placeholder, nama skill, format laporan).
 - **Pemilihan level:** `PROMPT_LEVEL=noob|medium|pro` di `.env`. alert-bridge memilih template sesuai level dan skenario (`scenario` di label alert).

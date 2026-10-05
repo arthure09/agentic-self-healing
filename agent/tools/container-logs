@@ -1,0 +1,32 @@
+#!/usr/bin/python3
+"""container-logs — baris terakhir log satu container stack agentic (hanya baca).
+
+Pemakaian:
+  container-logs medusa-postgres        50 baris terakhir
+  container-logs medusa-postgres 200    jumlah baris (maks 200)
+"""
+import subprocess
+import sys
+
+from _common import DOCKER, check_names, run
+
+MAX_LINES = 200
+
+
+def logs(args: list[str]) -> dict:
+    if not 1 <= len(args) <= 2:
+        raise ValueError("pemakaian: container-logs <container> [jumlah_baris]")
+    name = args[0]
+    check_names([name])
+    if len(args) == 2 and not args[1].isdigit():
+        raise ValueError("jumlah_baris harus angka")
+    n = min(int(args[1]) if len(args) == 2 else 50, MAX_LINES)
+    # docker logs menulis stdout dan stderr container ke dua stream terpisah.
+    p = subprocess.run([DOCKER, "logs", "--tail", str(n), "--timestamps", name],
+                       capture_output=True, text=True, check=True, timeout=20)
+    lines = sorted((p.stdout + p.stderr).splitlines())[-n:]
+    return {"name": name, "lines": lines}
+
+
+if __name__ == "__main__":
+    sys.exit(run("container-logs", logs))

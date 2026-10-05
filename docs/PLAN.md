@@ -16,7 +16,7 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 | 6 | alert-bridge | ✅ Selesai | 2026-09-30 | `Stage 6:` di git log |
 | 7 | OpenClaw Gateway + model Qwen (OpenRouter) | ✅ Selesai (dikonfigurasi pengguna dengan panduan) | 2026-10-02 | `Stage 7:` di git log |
 | 8 | ufw + alert-bridge → OpenClaw | ✅ Selesai (langkah OpenClaw dan ufw dijalankan pengguna) | 2026-10-02 | `Stage 8:` di git log |
-| 9 | Tool wrapper, skill TC-01..TC-04, guardrail | 🔄 Berjalan: tool 1, allowlist, draf prompt selesai; skill ditahan | — | `Stage 9:` di git log |
+| 9 | Tool wrapper, skill TC-01..TC-04, guardrail | 🔄 Berjalan: 5 tool + 4 skill ditulis; menunggu allowlist & extraDirs dari pengguna, lalu uji per TC | — | `Stage 9:` di git log |
 | 10 | Benchmark dan metrik | 📝 Draf, menunggu review | — | — |
 
 ## ▶ Lanjutkan dari sini (ditandai 2026-10-05)
@@ -25,11 +25,13 @@ Stage 1–8 selesai. Stage 9 berjalan:
 - ✅ Tool pertama `agent/tools/container-status` (hanya baca, terbatas ke stack `agentic`, tercatat di `benchmark/runs/actions.jsonl`).
 - ✅ Draf 12 template prompt di `prompts/noob|medium|pro/tc01..tc04.txt`.
 - ✅ Exec `deny` → allowlist (hanya `container-status`), dijalankan pengguna. Uji 2026-10-05: agent memanggil tool lewat hook → tercatat `ok` di `actions.jsonl`; hook yang menyuruh `docker ps -a` / `docker rm -f medusa-redis` → `exec denied: allowlist miss`, `medusa-redis` tetap jalan.
-- ⏸ Skill TC-01..TC-04 **ditahan** atas permintaan pengguna (2026-10-05).
+- ✅ Tool tambahan (2026-10-05): `container-logs`, `container-restart` (hanya medusa-postgres/redis/app, tunggu healthy), `pg-connections` (ringkasan, cancel, terminate, terminate-app; koneksi medusa-app & postgres-exporter dilindungi lewat IP container), `redis-memory` (info + 10 key terbesar, delete satu key; awalan `bull:`, `RedisEventBusService:`, `sess:` dilindungi). Kode bersama di `agent/tools/_common.py`. Diuji manual: baca OK, guardrail menolak container/key/input terlarang, terminate-app & delete pada target dummy OK.
+- ✅ Skill `skills/tc01..tc04-*/SKILL.md` ditulis (pola amati → putuskan → bertindak → verifikasi → berhenti, termasuk "jangan bertindak" bila tidak ada masalah).
 
 **Menunggu dari pengguna:**
+- Tambah 4 tool baru ke allowlist dan `skills.load.extraDirs` → folder `skills/` repo, restart gateway.
+- Setelah itu: uji TC-04 → TC-03 → TC-01 → TC-02 dengan agent, lalu uji false positive.
 - Review template prompt di `prompts/`.
-- Lampu hijau untuk mulai skill.
 - Nanti: Ollama + DeepSeek di PC RTX 5090, bot Telegram, dan persetujuan dosen soal OpenClaw berjalan di host serta pemakaian OpenRouter (laporan bimbingan 2026-09-18 menyebut OpenRouter "tidak diperlukan").
 
 **Keputusan yang masih terbuka:** Redis `noeviction` vs `allkeys-lru`; TC-01 diperberat atau tidak; ganti nama grup alert `example` → `agentic-chaos` (opsional); jumlah pengulangan benchmark (Stage 10, usulan 10 per TC per level prompt); keputusan terkait level prompt ada di `docs/PROMPT-LEVELS.md`; sandbox eksekusi agent (plugin OpenShell Sandbox / MXC Sandbox Execution, dibahas di Stage 9); subnet `agentic-net` dikunci di `docker-compose.yml` atau tidak.

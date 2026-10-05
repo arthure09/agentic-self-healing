@@ -12,64 +12,24 @@ ditampilkan dan ditolak bila diminta.
 Setiap pemanggilan dicatat ke benchmark/runs/actions.jsonl.
 """
 import json
-import os
-import re
-import subprocess
 import sys
-import time
 
-PROJECT = "agentic"
-DOCKER = "/usr/bin/docker"
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
-AUDIT_LOG = os.path.join(REPO, "benchmark", "runs", "actions.jsonl")
+from _common import check_names, docker, project_containers, run
+
 FMT = ('{"name":{{json .Name}},"state":{{json .State.Status}},'
        '"health":{{if .State.Health}}{{json .State.Health.Status}}{{else}}null{{end}},'
        '"exit_code":{{.State.ExitCode}},"started_at":{{json .State.StartedAt}},'
        '"restart_count":{{.RestartCount}}}')
 
 
-def docker(*args: str) -> str:
-    return subprocess.run([DOCKER, *args], capture_output=True, text=True,
-                          check=True, timeout=20).stdout
-
-
 def status(names: list[str]) -> list[dict]:
-    project = docker("ps", "-a", "--filter", f"label=com.docker.compose.project={PROJECT}",
-                     "--format", "{{.Names}}").split()
-    unknown = [n for n in names if n not in project]
-    if unknown:
-        raise ValueError(f"container tidak dikenal atau di luar stack {PROJECT}: {', '.join(unknown)}")
-    rows = [json.loads(line) for line in docker("inspect", "--format", FMT, *(names or project)).splitlines()]
+    check_names(names)
+    rows = [json.loads(line) for line in
+            docker("inspect", "--format", FMT, *(names or project_containers())).splitlines()]
     for r in rows:
         r["name"] = r["name"].lstrip("/")
     return sorted(rows, key=lambda r: r["name"])
 
 
-def audit(args: list[str], ok: bool, result, t0: float) -> None:
-    entry = {"ts_ms": time.time_ns() // 1_000_000, "tool": "container-status", "args": args,
-             "ok": ok, "result": result, "duration_ms": round((time.monotonic() - t0) * 1000)}
-    try:
-        with open(AUDIT_LOG, "a") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    except OSError as e:
-        print(f"peringatan: audit log gagal ditulis: {e}", file=sys.stderr)
-
-
-def main() -> int:
-    t0, args = time.monotonic(), sys.argv[1:]
-    try:
-        if any(not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,62}", a) for a in args):
-            raise ValueError("argumen hanya boleh nama container")
-        result = status(args)
-    except (ValueError, subprocess.SubprocessError) as e:
-        msg = getattr(e, "stderr", None) or str(e)
-        audit(args, False, msg.strip(), t0)
-        print(json.dumps({"error": msg.strip()}, ensure_ascii=False))
-        return 1
-    audit(args, True, result, t0)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
-
-
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run("container-status", status))

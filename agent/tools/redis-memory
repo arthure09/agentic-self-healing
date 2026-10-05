@@ -1,0 +1,77 @@
+#!/usr/bin/python3
+"""redis-memory — cek memori Redis (medusa-redis) dan hapus satu key besar.
+
+Pemakaian:
+  redis-memory                 pemakaian memori, maxmemory, policy, dan
+                               10 key terbesar (nama, tipe, panjang, byte)
+  redis-memory delete <key>    hapus satu key, lalu laporkan memori sesudahnya
+
+Key milik Medusa (awalan bull:, RedisEventBusService:, sess:) dilindungi.
+FLUSHALL/FLUSHDB tidak tersedia.
+"""
+import json
+import re
+import sys
+
+from _common import docker, run
+
+CONTAINER = "medusa-redis"
+PROTECTED_PREFIXES = ("bull:", "RedisEventBusService:", "sess:")
+
+# Pindai semua key, ambil 10 terbesar menurut MEMORY USAGE. Keyspace stack ini
+# kecil (puluhan key), jadi pemindaian penuh di dalam script aman.
+TOP_KEYS_LUA = """
+local keys, cursor = {}, "0"
+repeat
+  local r = redis.call("SCAN", cursor, "COUNT", 1000)
+  cursor = r[1]
+  for _, k in ipairs(r[2]) do
+    local t = redis.call("TYPE", k)["ok"]
+    local len = 0
+    if t == "list" then len = redis.call("LLEN", k)
+    elseif t == "hash" then len = redis.call("HLEN", k)
+    elseif t == "set" then len = redis.call("SCARD", k)
+    elseif t == "zset" then len = redis.call("ZCARD", k)
+    elseif t == "stream" then len = redis.call("XLEN", k) end
+    table.insert(keys, {key = k, type = t, length = len,
+                        bytes = redis.call("MEMORY", "USAGE", k, "SAMPLES", "0") or 0})
+  end
+until cursor == "0"
+table.sort(keys, function(a, b) return a.bytes > b.bytes end)
+local top = {}
+for i = 1, math.min(10, #keys) do top[i] = keys[i] end
+return cjson.encode({total_keys = #keys, top = top})
+"""
+
+
+def memory() -> dict:
+    info = dict(line.split(":", 1) for line in
+                docker("exec", CONTAINER, "redis-cli", "info", "memory").splitlines() if ":" in line)
+    used, maxmem = int(info["used_memory"]), int(info["maxmemory"])
+    return {"used_memory": used, "used_memory_human": info["used_memory_human"],
+            "maxmemory": maxmem, "used_pct": round(used * 100 / maxmem, 2) if maxmem else None,
+            "maxmemory_policy": info["maxmemory_policy"]}
+
+
+def main(args: list[str]):
+    if not args:
+        top = json.loads(docker("exec", CONTAINER, "redis-cli", "--raw", "eval", TOP_KEYS_LUA, "0"))
+        if top["top"] == {}:  # cjson mengubah tabel kosong menjadi objek
+            top["top"] = []
+        return {**memory(), **top, "protected_prefixes": list(PROTECTED_PREFIXES)}
+
+    if len(args) != 2 or args[0] != "delete":
+        raise ValueError("pemakaian: redis-memory | redis-memory delete <key>")
+    key = args[1]
+    if not re.fullmatch(r"[A-Za-z0-9:_.\-]{1,200}", key):
+        raise ValueError("nama key tidak valid")
+    if key.startswith(PROTECTED_PREFIXES):
+        raise ValueError(f"key milik Medusa dilindungi: {key}")
+    before = memory()
+    deleted = int(docker("exec", CONTAINER, "redis-cli", "--raw", "del", key).strip())
+    return {"key": key, "deleted": bool(deleted), "used_pct_before": before["used_pct"],
+            **memory()}
+
+
+if __name__ == "__main__":
+    sys.exit(run("redis-memory", main))

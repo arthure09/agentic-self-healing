@@ -1,0 +1,45 @@
+#!/usr/bin/python3
+"""container-restart — hidupkan atau restart satu container, lalu tunggu healthy.
+
+Pemakaian:
+  container-restart medusa-postgres
+
+Container yang berhenti di-start, container yang berjalan di-restart.
+Hanya medusa-postgres, medusa-redis, dan medusa-app yang diizinkan.
+Menunggu sampai health = healthy (maks 120 s), lalu melaporkan status akhir.
+"""
+import sys
+import time
+
+from _common import check_names, docker, run
+
+ALLOWED = ["medusa-postgres", "medusa-redis", "medusa-app"]
+WAIT_S = 120
+
+
+def state(name: str) -> tuple[str, str]:
+    out = docker("inspect", "-f", "{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}",
+                 name).split()
+    return out[0], out[1] if len(out) > 1 else ""
+
+
+def restart(args: list[str]) -> dict:
+    if len(args) != 1:
+        raise ValueError("pemakaian: container-restart <container>")
+    name = args[0]
+    check_names([name], ALLOWED)
+    before, _ = state(name)
+    action = "restart" if before == "running" else "start"
+    docker(action, name, timeout=60)
+    t0 = time.monotonic()
+    while True:
+        status, health = state(name)
+        if health in ("healthy", "") and status == "running" or time.monotonic() - t0 > WAIT_S:
+            break
+        time.sleep(2)
+    return {"name": name, "action": action, "state_before": before, "state": status,
+            "health": health or None, "waited_s": round(time.monotonic() - t0, 1)}
+
+
+if __name__ == "__main__":
+    sys.exit(run("container-restart", restart))

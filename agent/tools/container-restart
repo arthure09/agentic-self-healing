@@ -7,20 +7,33 @@ Pemakaian:
 Container yang berhenti di-start, container yang berjalan di-restart.
 Hanya medusa-postgres, medusa-redis, dan medusa-app yang diizinkan.
 Menunggu sampai health = healthy (maks 120 s), lalu melaporkan status akhir.
+
+Beberapa run agent bisa berjalan bersamaan (satu run per alert). Agar tidak
+saling me-restart: satu kunci per container, dan container yang baru menyala
+kurang dari FRESH_S detik tidak disentuh (action "none"), hanya ditunggu.
 """
+import fcntl
+import os
 import sys
 import time
+from datetime import datetime, timezone
 
-from _common import check_names, docker, run
+from _common import REPO, check_names, docker, run
 
 ALLOWED = ["medusa-postgres", "medusa-redis", "medusa-app"]
 WAIT_S = 120
+FRESH_S = 60
+LOCK_DIR = os.path.join(REPO, "benchmark", "runs", "locks")
 
 
-def state(name: str) -> tuple[str, str]:
-    out = docker("inspect", "-f", "{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}",
+def state(name: str) -> tuple[str, str, float]:
+    """(status, health, detik sejak container terakhir menyala)."""
+    out = docker("inspect", "-f",
+                 "{{.State.Status}} {{.State.StartedAt}} {{if .State.Health}}{{.State.Health.Status}}{{end}}",
                  name).split()
-    return out[0], out[1] if len(out) > 1 else ""
+    started = datetime.fromisoformat(out[1][:26].rstrip("Z") + "+00:00")  # Docker memberi nanodetik
+    age = (datetime.now(timezone.utc) - started).total_seconds()
+    return out[0], out[2] if len(out) > 2 else "", age
 
 
 def restart(args: list[str]) -> dict:
@@ -28,17 +41,33 @@ def restart(args: list[str]) -> dict:
         raise ValueError("pemakaian: container-restart <container>")
     name = args[0]
     check_names([name], ALLOWED)
-    before, _ = state(name)
-    action = "restart" if before == "running" else "start"
-    docker(action, name, timeout=60)
+    os.makedirs(LOCK_DIR, exist_ok=True)
+    with open(os.path.join(LOCK_DIR, f"{name}.lock"), "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)  # run lain menunggu sampai aksi run ini selesai
+        return _restart(name)
+
+
+def _restart(name: str) -> dict:
+    before, _, age = state(name)
+    if before != "running":
+        action = "start"
+    elif age < FRESH_S:
+        action = "none"  # baru dipulihkan (kemungkinan oleh run lain): cukup tunggu
+    else:
+        action = "restart"
+    if action != "none":
+        docker(action, name, timeout=60)
     t0 = time.monotonic()
     while True:
-        status, health = state(name)
+        status, health, _ = state(name)
         if health in ("healthy", "") and status == "running" or time.monotonic() - t0 > WAIT_S:
             break
         time.sleep(2)
-    return {"name": name, "action": action, "state_before": before, "state": status,
-            "health": health or None, "waited_s": round(time.monotonic() - t0, 1)}
+    result = {"name": name, "action": action, "state_before": before, "state": status,
+              "health": health or None, "waited_s": round(time.monotonic() - t0, 1)}
+    if action == "none":
+        result["note"] = f"container baru menyala {round(age)} s lalu, tidak di-restart ulang"
+    return result
 
 
 if __name__ == "__main__":

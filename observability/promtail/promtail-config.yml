@@ -25,3 +25,24 @@ scrape_configs:
         target_label: project
       - source_labels: ["__meta_docker_container_log_stream"]
         target_label: stream
+
+  # Hasil pengujian (benchmark/runs/*.jsonl) untuk dashboard "Aktivitas Agent".
+  # Label `kind`: actions (tool agent), alerts (alert-bridge), events (chaos/reset).
+  # ponytail: Loki hanya menyimpan 7 hari (retention 168h); arsip tetap file JSONL.
+  - job_name: runs
+    static_configs:
+      - targets: [localhost]
+        labels: {job: runs, kind: actions, __path__: /runs/actions.jsonl}
+      - targets: [localhost]
+        labels: {job: runs, kind: alerts, __path__: /runs/alerts.jsonl}
+      - targets: [localhost]
+        labels: {job: runs, kind: events, __path__: /runs/events.jsonl}
+    pipeline_stages:
+      - json:
+          expressions: {ts_ms: ts_ms, bridge_ms: bridge_received_ms, fwd_ms: forward_done_ms, tool: tool, event: event, scenario: scenario}
+      # Waktu log = waktu kejadian, bukan waktu dibaca Promtail.
+      - template:
+          source: ts
+          template: '{{ if .ts_ms }}{{ .ts_ms }}{{ else if .fwd_ms }}{{ .fwd_ms }}{{ else }}{{ .bridge_ms }}{{ end }}'
+      - timestamp: {source: ts, format: UnixMs}
+      - labels: {tool: "", event: "", scenario: ""}

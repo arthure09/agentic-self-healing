@@ -16,7 +16,7 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 | 6 | alert-bridge | ✅ Selesai | 2026-09-30 | `Stage 6:` di git log |
 | 7 | OpenClaw Gateway + model Qwen (OpenRouter) | ✅ Selesai (dikonfigurasi pengguna dengan panduan) | 2026-10-02 | `Stage 7:` di git log |
 | 8 | ufw + alert-bridge → OpenClaw | ✅ Selesai (langkah OpenClaw dan ufw dijalankan pengguna) | 2026-10-02 | `Stage 8:` di git log |
-| 9 | Tool wrapper, skill TC-01..TC-04, guardrail | 🔄 Berjalan: tool 1 + draf prompt selesai; buka kunci exec oleh pengguna; skill ditahan | — | `Stage 9:` di git log |
+| 9 | Tool wrapper, skill TC-01..TC-04, guardrail | 🔄 Berjalan: tool 1, allowlist, draf prompt selesai; skill ditahan | — | `Stage 9:` di git log |
 | 10 | Benchmark dan metrik | 📝 Draf, menunggu review | — | — |
 
 ## ▶ Lanjutkan dari sini (ditandai 2026-10-05)
@@ -24,7 +24,7 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 Stage 1–8 selesai. Stage 9 berjalan:
 - ✅ Tool pertama `agent/tools/container-status` (hanya baca, terbatas ke stack `agentic`, tercatat di `benchmark/runs/actions.jsonl`).
 - ✅ Draf 12 template prompt di `prompts/noob|medium|pro/tc01..tc04.txt`.
-- ⏳ Pengguna mengganti exec `deny` → allowlist (hanya `container-status`), lalu uji agent memanggil tool dan uji penolakan perintah lain.
+- ✅ Exec `deny` → allowlist (hanya `container-status`), dijalankan pengguna. Uji 2026-10-05: agent memanggil tool lewat hook → tercatat `ok` di `actions.jsonl`; hook yang menyuruh `docker ps -a` / `docker rm -f medusa-redis` → `exec denied: allowlist miss`, `medusa-redis` tetap jalan.
 - ⏸ Skill TC-01..TC-04 **ditahan** atas permintaan pengguna (2026-10-05).
 
 **Menunggu dari pengguna:**

@@ -89,7 +89,8 @@ Parameter default: TC-01 45 koneksi ditahan 600 s; TC-02 3 deadlock dengan jeda 
 | Hooks | `hooks.enabled=true`, `path=/hooks`, `allowedAgentIds=["merapi"]`, token = `OPENCLAW_HOOK_TOKEN` (`.env`) | Stage 7, 2026-10-02 |
 | Tugas latar dimatikan | `agents.defaults.heartbeat.every="0m"`, `plugins.entries.memory-core.config.dreaming.enabled=false`, `skills.workshop.autonomous.mode=off` | Stage 7, 2026-10-02 |
 | Dilewati saat onboarding | channel chat, web search, skill dependencies, optional plugins, import memory | Stage 7, 2026-10-02 |
-| Exec agent | `tools.exec.security=deny` (sementara, semua perintah host ditolak; default OpenClaw adalah `full`/`ask=off`). Diganti allowlist di Stage 9 | Stage 8, 2026-10-02 |
+| Exec agent | Stage 8: `tools.exec.security=deny`. **Stage 9 (2026-10-05): allowlist.** `openclaw exec-policy set --security allowlist --ask off --ask-fallback deny`, entri allowlist agent `merapi`: `~/skripsi/agentic-server-mgmt/agent/tools/container-status` (any args; argumen divalidasi oleh tool). Disimpan di `~/.openclaw/state/openclaw.sqlite#exec_approvals_config`. Perintah lain ditolak dengan `exec denied: allowlist miss` (log: `journalctl --user -u openclaw-gateway`) | Stage 8–9 |
+| Akses Docker agent | Gateway butuh grup `docker` (setara root) untuk tool wrapper. Manajer `systemd --user` dimulai sebelum `areph09` masuk grup `docker`, jadi perlu `sudo systemctl restart user@1000.service` sekali (2026-10-05). Risiko dibatasi oleh allowlist: agent hanya bisa menjalankan tool wrapper | Stage 9, 2026-10-05 |
 
 ## Jaringan alert-bridge → OpenClaw (Stage 8)
 
@@ -98,3 +99,11 @@ Parameter default: TC-01 45 koneksi ditahan 600 s; TC-02 3 deadlock dengan jeda 
 | Jaringan compose | `agentic_agentic-net`, subnet `172.18.0.0/16`, gateway `172.18.0.1`, interface host `br-60cc89f9f66f` (dibuat otomatis Docker; berubah bila jaringan dibuat ulang, misalnya `docker compose down`) | Stage 8, 2026-10-02 |
 | ufw | `sudo ufw allow in on br-60cc89f9f66f from 172.18.0.0/16 to 172.18.0.1 port 18789 proto tcp comment 'OpenClaw dari agentic-net'` | Stage 8, 2026-10-02 |
 | `.env` | `OPENCLAW_HOOK_URL=http://172.18.0.1:18789/hooks/agent`, `OPENCLAW_AGENT_ID=merapi` | Stage 8, 2026-10-02 |
+
+## Tool wrapper agent (Stage 9)
+
+| Tool | Fungsi | Batasan | Dicatat |
+|---|---|---|---|
+| `agent/tools/container-status [nama...]` | Status container (state, health, exit_code, started_at, restart_count) dalam JSON | Hanya baca; hanya container proyek compose `agentic` (Nextcloud ditolak); argumen harus nama container | Stage 9, 2026-10-05 |
+
+**Audit log:** `benchmark/runs/actions.jsonl`, satu baris per pemanggilan: `ts_ms`, `tool`, `args`, `ok`, `result`, `duration_ms`. `run_id` belum ada karena OpenClaw tidak meneruskannya ke proses tool. Korelasi dengan run agent lewat timestamp (`openclaw audit --agent merapi`).

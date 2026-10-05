@@ -31,9 +31,20 @@ Stage 1–8 selesai. Stage 9 berjalan:
 - ✅ Uji TC-04 dengan agent (2026-10-05, `RUN_ID=s9-tc04-20261005T105011Z`, workspace lama tanpa system prompt pro, pesan alert-bridge lama): alert diterima +13 s, aksi pertama +17 s, `medusa-postgres` di-start +50 s, `medusa-redis` +61 s, semua healthy dan 0 alert ±+65 s. **Tanpa campur tangan manusia.** Dua run (PostgresDown, RedisDown) masing-masing ±31 ribu token input, 1,3–2 ribu output (±$0,012 per run). **Masalah:** kedua run memulihkan kedua container bersamaan, sehingga tiap container di-start oleh satu run lalu langsung di-restart lagi oleh run lain (`state_before: running`). `reset-env.sh` sesudahnya OK. **Diperbaiki (opsi 1):** `container-restart` kini memakai kunci per container (`benchmark/runs/locks/`) dan tidak me-restart container yang baru menyala < 60 s (`action: none`, hanya menunggu healthy). Diuji: Redis dihentikan, dua pemanggilan bersamaan → satu `start`, satu `none`, `RestartCount` 0.
 
 - ✅ Dashboard Grafana **Aktivitas Agent** (`/d/agentic-agent`, folder Agentic): Promtail membaca `benchmark/runs/*.jsonl` (label `kind` = actions/alerts/events, waktu = waktu kejadian), lalu dashboard menampilkan angka ringkas, grafik pemanggilan tool per tool, kondisi layanan dari Prometheus, kronologi chaos 💥 / alert 🚨 / tool 🔧, dan anotasi chaos, alert, reset. Loki hanya menyimpan 7 hari; arsip tetap file JSONL.
+- ✅ **Uji per TC dengan agent (2026-10-05)**, workspace lama dan pesan alert-bridge lama, semua pulih **tanpa campur tangan manusia**. Waktu dihitung dari `inject_start`:
+
+| TC | `RUN_ID` | Alert → agent | Aksi agent | Alert resolved | Token in/out |
+|---|---|---|---|---|---|
+| TC-03 | s9-tc03-20261005T114739Z | +16 s | `redis-memory delete <key antrean>` +39 s (92,6% → 0,9%) | +46 s | 19,8k / 1,2k |
+| TC-01 | s9-tc01-20261005T114943Z | +37 s | `pg-connections terminate-app <klien>` +64 s (43 koneksi, 47 → 4) | +67 s | 9,3k / 1,5k |
+| TC-02 | s9-tc02-20261005T115211Z | +4 s | tidak ada aksi (0 sesi tertahan, benar) | +64 s (padam sendiri) | 20,9k / 1,8k |
+| TC-04 ulang | s9-tc04b-20261005T115437Z | ±+15 s | start postgres +43 s, redis +53 s; run kedua `action: none` 2×, `RestartCount` 0 | ±+55 s | 13,8k+12,7k / 4,0k |
+
+  Catatan: TC-01 terdeteksi lebih lambat (+37 s) dibanding uji Stage 4 (+12 s); dicek lagi di Stage 10. Agent TC-01 tidak mengecek `medusa-app` di akhir (langkah verifikasi skill dilewati). Skrip chaos TC-01 berhenti sendiri (`terminated_by_server`).
+- ✅ **Uji false positive**: 2 alert palsu (PostgresDown, PostgresConnectionPoolExhaustion) dikirim ke alert-bridge saat sistem sehat. Agent hanya memanggil `container-status` dan `pg-connections`, **tidak ada aksi pemulihan**, container tidak di-restart. Token 3,5–4,2k in per run.
+- Uji guardrail Stage 9 sudah lolos sebelumnya (`exec denied: allowlist miss`). **Verifikasi Stage 9 terpenuhi** untuk setup lama. Sisa: sambungkan template + gabungkan alert di alert-bridge, pasang system prompt pro, uji ulang singkat.
 **Menunggu dari pengguna:**
 - Opsi 2 (gabungkan alert jadi satu run) dikerjakan bersama penyambungan template di alert-bridge, menunggu persetujuan.
-- Uji berikutnya: TC-03 → TC-01 → TC-02 dengan agent, lalu uji false positive (allowlist dan extraDirs sudah dipasang pengguna).
 - Review template prompt di `prompts/`.
 - Nanti: Ollama + DeepSeek di PC RTX 5090, bot Telegram, dan persetujuan dosen soal OpenClaw berjalan di host serta pemakaian OpenRouter (laporan bimbingan 2026-09-18 menyebut OpenRouter "tidak diperlukan").
 

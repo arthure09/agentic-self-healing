@@ -32,8 +32,7 @@ Stage 1–8 selesai. Stage 9 berjalan:
 
 **Menunggu dari pengguna:**
 - Pilih perbaikan restart ganda TC-04.
-- Tambah 4 tool baru ke allowlist dan `skills.load.extraDirs` → folder `skills/` repo, restart gateway.
-- Setelah itu: uji TC-04 → TC-03 → TC-01 → TC-02 dengan agent, lalu uji false positive.
+- Uji berikutnya: TC-03 → TC-01 → TC-02 dengan agent, lalu uji false positive (allowlist dan extraDirs sudah dipasang pengguna).
 - Review template prompt di `prompts/`.
 - Nanti: Ollama + DeepSeek di PC RTX 5090, bot Telegram, dan persetujuan dosen soal OpenClaw berjalan di host serta pemakaian OpenRouter (laporan bimbingan 2026-09-18 menyebut OpenRouter "tidak diperlukan").
 

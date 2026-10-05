@@ -1,0 +1,8 @@
+Alert {alertname} (severity {severity}) sejak {starts_at}: {summary}. {description}
+Dugaan: ada klien yang menahan banyak koneksi idle ke medusa-postgres (max_connections=50).
+Jalankan skill tc01-connection-pool-healing:
+1. Cek status container dengan container-status.
+2. Kelompokkan koneksi di pg_stat_activity per application_name dan state.
+3. Hentikan hanya koneksi idle milik klien yang berlebihan (pg_terminate_backend). Jangan hentikan koneksi milik Medusa atau exporter.
+4. Verifikasi pemakaian koneksi kembali di bawah 85% dan medusa-app tetap sehat.
+Batasan: jangan restart PostgreSQL, jangan ubah konfigurasi, jangan hapus data.

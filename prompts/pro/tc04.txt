@@ -1,0 +1,8 @@
+Alert {alertname} (severity {severity}) sejak {starts_at}: {summary}. {description}
+Dugaan: container medusa-postgres dan/atau medusa-redis berhenti (Exited).
+Jalankan skill tc04-container-recovery:
+1. Cek status container dengan container-status.
+2. Start container yang berhenti (hanya medusa-postgres, medusa-redis, atau medusa-app).
+3. Tunggu sampai health menjadi healthy.
+4. Verifikasi pg_up=1 dan redis_up=1, lalu pastikan medusa-app tetap sehat (restart medusa-app hanya bila tidak pulih sendiri).
+Batasan: jangan hapus container atau volume, jangan ubah konfigurasi.

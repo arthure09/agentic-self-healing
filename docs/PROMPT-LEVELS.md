@@ -22,8 +22,9 @@ Contoh ini hanya ilustrasi. Teks resmi ada di file template (lihat di bawah).
 
 ## Penerapan
 
-- **Template:** `alert-bridge/prompts/noob.txt`, `medium.txt`, dan `pro.txt`. Setiap file berisi teks untuk TC-01..TC-04, jadi totalnya 12 teks.
-- **Pembuatan:** Claude membuat draf di awal Stage 9. Template level pro menyebut nama skill dan tool, yang baru ada di Stage 9. **Pengguna me-review** dulu sebelum template dipakai untuk benchmark.
+- **Template:** folder `prompts/` dengan subfolder per level: `prompts/noob/`, `prompts/medium/`, `prompts/pro/`. Setiap subfolder berisi `tc01.txt`..`tc04.txt`, jadi totalnya 12 teks.
+- **Placeholder:** diisi alert-bridge dari data alert. Medium memakai `{alertname}`. Pro memakai `{alertname}`, `{severity}`, `{starts_at}`, `{summary}`, dan `{description}`. Noob tidak memakai placeholder.
+- **Pembuatan:** draf dibuat 2026-10-05 (Stage 9). Template level pro menyebut nama skill dan tool `container-status`. Tool lain disebut sebagai langkah, karena belum dibuat. **Status: menunggu review pengguna**, belum dipakai alert-bridge.
 - **Pemilihan level:** `PROMPT_LEVEL=noob|medium|pro` di `.env`. alert-bridge memilih template sesuai level dan skenario (`scenario` di label alert).
 - **Pencatatan:** setiap alert yang diteruskan mencatat `prompt_level` di `benchmark/runs/alerts.jsonl`.
 - **Benchmark (Stage 10):** satu batch per level. Set `PROMPT_LEVEL`, restart alert-bridge, lalu jalankan semua TC. Hasil metrik dikelompokkan per level dan per TC.

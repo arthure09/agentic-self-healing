@@ -1,0 +1,8 @@
+Alert {alertname} (severity {severity}) sejak {starts_at}: {summary}. {description}
+Dugaan: ada antrean (list) yang membengkak di medusa-redis (maxmemory 256 MB, policy noeviction).
+Jalankan skill tc03-redis-memory-flood:
+1. Cek status container dengan container-status.
+2. Cek pemakaian memori Redis dan cari key terbesar.
+3. Hapus hanya antrean yang bukan milik Medusa dan menjadi penyebab lonjakan.
+4. Verifikasi pemakaian memori kembali di bawah 85% dan medusa-app tetap sehat.
+Batasan: jangan FLUSHALL atau FLUSHDB, jangan hapus key milik Medusa, jangan restart Redis.

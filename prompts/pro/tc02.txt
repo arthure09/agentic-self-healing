@@ -1,0 +1,8 @@
+Alert {alertname} (severity {severity}) sejak {starts_at}: {summary}. {description}
+Dugaan: dua transaksi mengunci baris yang sama dengan urutan terbalik di medusa-postgres.
+Jalankan skill tc02-deadlock-resolution:
+1. Cek status container dengan container-status.
+2. Cari transaksi yang masih menunggu lock (pg_stat_activity, pg_locks) dan baca log PostgreSQL untuk detail deadlock.
+3. Bila masih ada transaksi yang tertahan, batalkan hanya transaksi tersebut (pg_cancel_backend, lalu pg_terminate_backend bila perlu).
+4. Verifikasi tidak ada lagi transaksi yang menunggu lock dan counter deadlock tidak naik lagi.
+Batasan: jangan restart PostgreSQL, jangan ubah konfigurasi, jangan hapus data.

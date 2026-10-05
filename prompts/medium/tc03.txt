@@ -1,0 +1,1 @@
+Ada alert {alertname} di server. Sepertinya memori Redis hampir penuh. Tolong cek dan pulihkan.

@@ -16,20 +16,20 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 | 6 | alert-bridge | ✅ Selesai | 2026-09-30 | `Stage 6:` di git log |
 | 7 | OpenClaw Gateway + model Qwen (OpenRouter) | ✅ Selesai (dikonfigurasi pengguna dengan panduan) | 2026-10-02 | `Stage 7:` di git log |
 | 8 | ufw + alert-bridge → OpenClaw | ✅ Selesai (langkah OpenClaw dan ufw dijalankan pengguna) | 2026-10-02 | `Stage 8:` di git log |
-| 9 | Tool wrapper, skill TC-01..TC-04, guardrail | 📝 Draf, menunggu review | — | — |
+| 9 | Tool wrapper, skill TC-01..TC-04, guardrail | 🔄 Berjalan: tool 1 + draf prompt selesai; buka kunci exec oleh pengguna; skill ditahan | — | `Stage 9:` di git log |
 | 10 | Benchmark dan metrik | 📝 Draf, menunggu review | — | — |
 
-## ▶ Lanjutkan dari sini (ditandai 2026-10-02)
+## ▶ Lanjutkan dari sini (ditandai 2026-10-05)
 
-Stage 1–8 selesai. Alert dari Alertmanager → alert-bridge → OpenClaw (`forward_ok`, HTTP 200) sudah teruji dengan TC-04. Eksekusi perintah agent masih **dikunci** (`tools.exec.security=deny`), jadi agent belum bisa memulihkan apa pun.
-
-**Langkah berikutnya: Stage 9.**
-1. Tool wrapper pertama (cek status container) dan allowlist exec, ganti `deny`.
-2. Draf 12 template prompt (noob, medium, pro × TC-01..TC-04) untuk direview pengguna. Detail di `docs/PROMPT-LEVELS.md`.
-3. Skill TC-01..TC-04 satu per satu, diuji dengan TC yang sesuai.
+Stage 1–8 selesai. Stage 9 berjalan:
+- ✅ Tool pertama `agent/tools/container-status` (hanya baca, terbatas ke stack `agentic`, tercatat di `benchmark/runs/actions.jsonl`).
+- ✅ Draf 12 template prompt di `prompts/noob|medium|pro/tc01..tc04.txt`.
+- ⏳ Pengguna mengganti exec `deny` → allowlist (hanya `container-status`), lalu uji agent memanggil tool dan uji penolakan perintah lain.
+- ⏸ Skill TC-01..TC-04 **ditahan** atas permintaan pengguna (2026-10-05).
 
 **Menunggu dari pengguna:**
-- Review template prompt (setelah drafnya ada).
+- Review template prompt di `prompts/`.
+- Lampu hijau untuk mulai skill.
 - Nanti: Ollama + DeepSeek di PC RTX 5090, bot Telegram, dan persetujuan dosen soal OpenClaw berjalan di host serta pemakaian OpenRouter (laporan bimbingan 2026-09-18 menyebut OpenRouter "tidak diperlukan").
 
 **Keputusan yang masih terbuka:** Redis `noeviction` vs `allkeys-lru`; TC-01 diperberat atau tidak; ganti nama grup alert `example` → `agentic-chaos` (opsional); jumlah pengulangan benchmark (Stage 10, usulan 10 per TC per level prompt); keputusan terkait level prompt ada di `docs/PROMPT-LEVELS.md`; sandbox eksekusi agent (plugin OpenShell Sandbox / MXC Sandbox Execution, dibahas di Stage 9); subnet `agentic-net` dikunci di `docker-compose.yml` atau tidak.

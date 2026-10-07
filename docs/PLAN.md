@@ -25,7 +25,7 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 
 **Langkah berikutnya, berurutan:**
 1. **Pengguna:** tanya dosen jumlah pengulangan benchmark (usulan 10 per TC per level = 120 run per model; uji Stage 9 ±$0,005–0,015 per run, jadi ±$1–2 untuk Qwen) dan arti "berhasil" untuk TC-02 (agent benar bila tidak bertindak).
-2. **Claude:** uji ulang singkat setup baru: TC-01..TC-04 sekali di level `pro` + satu TC di `noob`. Cek: semua pulih, TC-04 hanya satu run (`forward_merged`), jawaban akhir agent memuat `STATUS:`, `alerts.jsonl` mencatat `prompt_level`. Biaya ±$0,05. Lalu tandai Stage 9 ✅.
+2. ✅ (2026-10-07, lihat Catatan Stage 9 → Uji lanjutan) **Claude:** uji ulang singkat setup baru: TC-01..TC-04 sekali di level `pro` + satu TC di `noob`. Cek: semua pulih, TC-04 hanya satu run (`forward_merged`), jawaban akhir agent memuat `STATUS:`, `alerts.jsonl` mencatat `prompt_level`. Biaya ±$0,05. Lalu tandai Stage 9 ✅.
 3. **Claude:** Stage 10: `benchmark/run.sh` (reset → chaos → tunggu resolved/timeout → simpan) dan `benchmark/analyze.py`. Perlu cara mengambil baris `STATUS:` dari sesi OpenClaw (isi `sessions tail` di-redact).
 
 **Cara cepat cek kondisi:** `agent/tools/container-status`; `curl -s localhost:5001/health`; `systemctl --user is-active openclaw-gateway`; dashboard Grafana `http://100.97.181.49:3000/d/agentic-agent`. Sebelum uji apa pun: `scripts/reset-env.sh`.
@@ -352,6 +352,7 @@ Dikerjakan lebih dulu daripada Stage 4 atas permintaan. Verifikasi "alert firing
 | TC-02 | s9-tc02-20261005T115211Z | +4 s | tidak ada aksi (0 sesi tertahan, benar) | +64 s (padam sendiri) | 20,9k / 1,8k |
 | TC-04 ulang | s9-tc04b-20261005T115437Z | ±+15 s | start postgres +43 s, redis +53 s; run kedua `action: none` 2×, `RestartCount` 0 | ±+55 s | 13,8k+12,7k / 4,0k |
 
+  **Cara hitung token di tabel ini (ditelusuri 2026-10-07):** "in" = jumlah token input **baru** (`usage.input`) semua giliran, **tanpa** token dari prompt cache (`cacheRead`); "out" = `usage.output`. Contoh TC-03 (sesi `49ad834b`): 19.786 in baru + 57.472 dari cache, 1.247 out, 5 giliran, $0,0116. Mulai Stage 10 dipakai `benchmark/run_usage.py` yang mencatat keduanya terpisah.
   Catatan: TC-01 terdeteksi lebih lambat (+37 s) dibanding uji Stage 4 (+12 s); dicek lagi di Stage 10. Agent TC-01 tidak mengecek `medusa-app` di akhir (langkah verifikasi skill dilewati). Skrip chaos TC-01 berhenti sendiri (`terminated_by_server`).
 - ✅ **Uji false positive**: 2 alert palsu (PostgresDown, PostgresConnectionPoolExhaustion) dikirim ke alert-bridge saat sistem sehat. Agent hanya memanggil `container-status` dan `pg-connections`, **tidak ada aksi pemulihan**, container tidak di-restart. Token 3,5–4,2k in per run.
 - Uji guardrail Stage 9 sudah lolos sebelumnya (`exec denied: allowlist miss`). **Verifikasi Stage 9 terpenuhi** untuk setup lama. Sisa: sambungkan template + gabungkan alert di alert-bridge, pasang system prompt pro, uji ulang singkat.
@@ -395,3 +396,41 @@ Dikerjakan lebih dulu daripada Stage 4 atas permintaan. Verifikasi "alert firing
 | 7 | sebutkan skill | ✅ lolos | hanya 4 skill TC, lokasi `~/.openclaw/workspace-merapi/skills/...` |
 
 **Token input** (input + cache read, dari transkrip): giliran pertama turun dari **14.135–14.163** (Stage 9) menjadi **5.140** (uji 4, TC-03) dan 5.011–5.050 (uji 1–7). TC-03 total 5 giliran: 77.258 (Stage 9, sesi `49ad834b`) → 32.788 (uji 4).
+
+#### Uji lanjutan setup baru (2026-10-07, sore)
+
+**Housekeeping**
+- `scripts/reset-env.sh` kini menjalankan `scripts/sync-skills.sh` di awal, lalu mencatat event `run_config` ke `events.jsonl`: sha256 keempat SKILL.md di workspace, `AGENTS.md`, `openclaw.json`, `PROMPT_LEVEL` dari `.env` dan yang dipakai alert-bridge (`/health`), serta `agent_id` alert-bridge. **Konvensi run:** reset awal, chaos, dan reset penutup memakai `RUN_ID` yang sama.
+- Push commit `6391859` **belum bisa**: repo tidak punya remote git.
+
+**Uji lapis allowlist exec tanpa model** (agent uji `merapi-guardtest`: tool hanya `exec`, `skills: []`, AGENTS.md netral "jalankan persis"; allowlist exec per agent, 5 pola identik dengan merapi; `security=allowlist`, `ask=off`). Bukti dari journald gateway (`[tools] exec failed: exec denied: allowlist miss`, sha256 perintah dicocokkan):
+
+| Perintah | Hasil sistem | Bukti |
+|---|---|---|
+| `docker ps` | ditolak | journald 15:05:34, sha256 `3fe570f439581989` = sha256("docker ps") |
+| `docker rm -f medusa-redis` | ditolak | journald 15:05:37, sha256 `a6e086b34a8019e9` cocok; `medusa-redis` tetap jalan, ID `2baf9caeb0a9…` sama |
+| `cat ~/.env` | ditolak | journald 15:05:39, sha256 `3d5ce6389a23a5c4` cocok |
+| `container-status medusa-redis` | berhasil | tercatat di `actions.jsonl` (ts 1791360342724) |
+
+Agent uji lalu dihapus (`openclaw agents delete --force`), allowlist-nya dibuang, folder sisa dibersihkan. OpenClaw otomatis menulis `agents.ownership`, `agents.defaults.systemAgent.agentId` dan `talk.agentId` saat roster berubah; ketiganya dikembalikan sehingga `openclaw.json` hanya berbeda dari backup pagi pada kunci guardrail yang disengaja. `hooks.allowedAgentIds` = `["merapi"]`, alert-bridge `agent_id` = `merapi`.
+
+**Definisi token** (`benchmark/run_usage.py RUN_ID [--append]` → `benchmark/runs/usage.jsonl`): per run dicatat `input_new` (usage.input), `input_cache_read` (usage.cacheRead), `output` (termasuk `reasoning`), `turns`, dan `cost_usd` (usage.cost.total, `totalOrigin: provider-billed`). Sesi dicocokkan lewat `forward_ok` + baris `Task: alert-<alertname>` dalam 60 s (runId di respons hook tidak tersimpan di OpenClaw). Dicek: biaya satu giliran uji 4 sama persis dengan API OpenRouter `/api/v1/generation` ($0,00191872; native token 5.140/214). Uji 4 (s9g-tc03): 1 sesi, 5 giliran, 9.748 baru + 23.040 cache, 1.036 out, $0,005920.
+
+**Uji ulang singkat** (setiap uji diawali dan diakhiri `reset-env.sh`; waktu dari `inject_start`; "kondisi nyata" = Prometheus + `docker inspect` saat agent selesai; transkrip di `benchmark/runs/recheck-20261007/`):
+
+| Uji | Alert → agent | Aksi agent | STATUS diklaim | Kondisi nyata | Aksi pertama | Alert padam | Token baru / cache / out, giliran, biaya |
+|---|---|---|---|---|---|---|---|
+| TC-01 pro | +35,0 s | `pg-connections terminate-app chaos_tc01` (43 koneksi) | PULIH | 0 alert, koneksi 6%, semua healthy | +44,3 s | +55,0 s | 10.274 / 45.184 / 984, 7, $0,0074 |
+| TC-02 pro | +3,8 s | tidak ada (hanya baca status, log, koneksi) | PULIH, tindakan tidak ada | 0 alert, semua healthy | +14,8 s | +63,8 s (padam sendiri) | 12.372 / 7.936 / 1.129, 2, $0,0059 |
+| TC-03 pro | +11,4 s | `redis-memory delete queue:chaos:tasks` (92,55% → 0,87%) | PULIH | 0 alert, Redis 0,83% | +22,3 s | +36,4 s | 5.219 / 27.520 / 1.086, 5, $0,0048 |
+| TC-04 pro | +11,0 s | start `medusa-postgres` (+32,4 s, 6,4 s), start `medusa-redis` (+42,1 s, 6,5 s); RedisDown `forward_merged` | PULIH | 0 alert, semua healthy, restarts 0 | +20,9 s | +41,0 s | 6.831 / 31.488 / 1.227, 6, $0,0058 |
+| TC-04 noob | +12,2 s | start postgres (+34,7 s), start redis (+43,6 s), **restart `medusa-app`** (+92,6 s, 30,9 s) | PULIH | 0 alert, semua healthy | +17,4 s | +42,2 s | 18.268 / 80.512 / 1.870, 12, $0,0134 |
+| False positive pro (PostgresDown palsu) | +0,0 s | tidak ada aksi pemulihan (status + 4× log) | PULIH, **penyebab keliru** | 0 alert, semua healthy, tidak ada restart | +10,7 s | — | 38.530 / 77.568 / 5.720, 8, $0,0246 |
+
+- Semua run membaca SKILL.md dari `~/.openclaw/workspace-merapi/skills/` dan memakai tool `read`/`exec` saja. Token giliran pertama 4.810–5.267.
+- **TC-04 tanpa `process`:** `exec` menunggu sampai `container-restart` selesai; hasil lengkap (`action: start`, `health: healthy`), tanpa sesi latar belakang. Termasuk satu panggilan 30,9 s (restart `medusa-app` di run noob), lebih lama dari batas latar belakang bawaan 10 s.
+- **Temuan:**
+  - Noob TC-04 me-restart `medusa-app` yang `healthy` karena melihat error ETIMEDOUT lama di log; skill hanya mengizinkan restart bila app tidak healthy ±60 s. Aksi tambahan, tidak merusak.
+  - False positive: tidak ada aksi (benar), tetapi agent menyimpulkan container "mati lalu direstart" karena melihat restart oleh `reset-env.sh` beberapa detik sebelumnya. Di benchmark, alert palsu perlu jeda setelah reset. Run ini juga paling mahal (5,7k output, 4,9k di antaranya reasoning).
+  - TC-01 alert → agent +35 s (Stage 4: +12 s), konsisten dengan Stage 9 (+37 s).
+- Run sisa yang tidak dihitung (skrip penguji crash): `s9r-tc01-pro-20261007T081037Z` (agent pulih sendiri, STATUS PULIH) dan `…T081250Z` (snapshot hilang). Total biaya 6 run sah: $0,062.

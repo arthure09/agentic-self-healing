@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Kembalikan stack ke kondisi awal yang identik sebelum setiap run pengujian:
+#   0. salin skill ke workspace agent (sync-skills.sh) dan catat event run_config
+#      (sha256 SKILL.md, AGENTS.md, openclaw.json; PROMPT_LEVEL .env & alert-bridge)
 #   1. hentikan chaos script yang masih berjalan (pidfile)
 #   2. putus koneksi chaos di PostgreSQL, bersihkan tabel uji TC-02
 #   3. restart PostgreSQL, Redis (tanpa persistensi -> kosong), lalu Medusa
@@ -54,6 +56,22 @@ wait_until() {  # wait_until <deskripsi> <perintah...>  (perintah dievaluasi ula
 }
 
 event reset_start >/dev/null
+
+# 0. Skill agent dibaca dari salinan di workspace (tools.fs.workspaceOnly), jadi
+#    selaraskan dulu dengan repo, lalu catat konfigurasi agent untuk run ini.
+scripts/sync-skills.sh >&2
+OC="$HOME/.openclaw"
+sha() { sha256sum "$1" | cut -d' ' -f1; }
+skills_json="{}"
+for f in "$OC"/workspace-merapi/skills/*/SKILL.md; do
+  skills_json="$(jq -c --arg k "$(basename "$(dirname "$f")")" --arg v "$(sha "$f")" '. + {($k): $v}' <<<"$skills_json")"
+done
+bridge="$(curl -sf -m 5 http://127.0.0.1:5001/health || echo '{}')"
+event run_config "$(jq -cn --argjson skills "$skills_json" \
+  --arg agents "$(sha "$OC/workspace-merapi/AGENTS.md")" --arg oc "$(sha "$OC/openclaw.json")" \
+  --arg env_level "${PROMPT_LEVEL:-}" --argjson bridge "$bridge" \
+  '{skill_sha256:$skills, agents_md_sha256:$agents, openclaw_json_sha256:$oc,
+    prompt_level_env:$env_level, prompt_level_bridge:$bridge.prompt_level, bridge_agent_id:$bridge.agent_id}')" >/dev/null
 
 # 1. Hentikan chaos script yang masih berjalan
 killed=()

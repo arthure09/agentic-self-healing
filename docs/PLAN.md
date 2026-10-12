@@ -16,29 +16,41 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 | 6 | alert-bridge | ✅ Selesai | 2026-09-30 | `Stage 6:` di git log |
 | 7 | OpenClaw Gateway + model Qwen (OpenRouter) | ✅ Selesai (dikonfigurasi pengguna dengan panduan) | 2026-10-02 | `Stage 7:` di git log |
 | 8 | ufw + alert-bridge → OpenClaw | ✅ Selesai (langkah OpenClaw dan ufw dijalankan pengguna) | 2026-10-02 | `Stage 8:` di git log |
-| 9 | Tool wrapper, skill TC-01..TC-04, guardrail | 🔄 Hampir selesai: uji TC + false positive lolos; tinggal uji ulang setup baru (template + system prompt pro) | — | `Stage 9:` di git log |
+| 9 | Tool wrapper, skill TC-01..TC-04, guardrail | ✅ Selesai (revisi bimbingan 2026-10-12 + alert-bridge 1.2.0) | 2026-10-12 | `Stage 9:` di git log |
 | 10 | Benchmark dan metrik | 📝 Draf, menunggu review | — | — |
 
-## ▶ Lanjutkan dari sini (ditandai 2026-10-05, sore)
+## Keputusan bimbingan (dicatat 2026-10-12)
 
-**Posisi:** Stage 1–8 selesai. Stage 9 hampir selesai: 5 tool, 4 skill, guardrail allowlist, uji TC-01..TC-04 + false positive **lolos** (dengan setup lama). Setelah itu alert-bridge 1.1.0 (template prompt per level + gabung alert) dan system prompt pro dipasang, **tetapi belum diuji dengan agent**. Detail di "Catatan per stage → Stage 9".
+**Tetap:**
+- Pengulangan benchmark: **maksimal 10 per TC per level**. Analisis deskriptif, disajikan terutama dalam **tabel**.
+- Analisis membandingkan **langkah agent** antarlevel (urutan tool, kelengkapan amati → bertindak → verifikasi), bukan hanya berhasil/gagal.
+- Tiga model: **Qwen** dan **Gemini** (keduanya lewat OpenRouter), **DeepSeek lokal** (ditunda). OpenRouter dan OpenClaw di host **disetujui dosen**.
+- Teks prompt noob **tanpa istilah teknis sama sekali** (termasuk "database" dan "server"); dicek `prompts/check_prompts.py`.
+- Agent level noob **boleh melihat daftar skill** (skill terpasang sama untuk semua level).
+- TC-03: **restart Redis dilarang** (data Medusa di Redis ikut hilang). Cluster/balance Redis tidak diterapkan (saran pengembangan Bab 5).
+- TC-05 (deployment) **ditunda, tidak dihapus**. DeepSeek lokal ditunda.
 
-**Langkah berikutnya, berurutan:**
-1. **Pengguna:** tanya dosen jumlah pengulangan benchmark (usulan 10 per TC per level = 120 run per model; uji Stage 9 ±$0,005–0,015 per run, jadi ±$1–2 untuk Qwen) dan arti "berhasil" untuk TC-02 (agent benar bila tidak bertindak).
-2. ✅ (2026-10-07, lihat Catatan Stage 9 → Uji lanjutan) **Claude:** uji ulang singkat setup baru: TC-01..TC-04 sekali di level `pro` + satu TC di `noob`. Cek: semua pulih, TC-04 hanya satu run (`forward_merged`), jawaban akhir agent memuat `STATUS:`, `alerts.jsonl` mencatat `prompt_level`. Biaya ±$0,05. Lalu tandai Stage 9 ✅.
-3. **Claude:** Stage 10: `benchmark/run.sh` (reset → chaos → tunggu resolved/timeout → simpan) dan `benchmark/analyze.py`. Perlu cara mengambil baris `STATUS:` dari sesi OpenClaw (isi `sessions tail` di-redact).
+**Sementara** (belum dijawab dosen, memakai usulan semula):
+- TC-02 benar bila agent **tidak melakukan aksi pemulihan**.
+- System prompt **sama (pro)** untuk semua level.
+- Redis tetap `noeviction`. TC-01 tidak diperberat.
+
+## ▶ Lanjutkan dari sini (ditandai 2026-10-12)
+
+**Posisi:** Stage 1–9 selesai. Revisi bimbingan 2026-10-12 diterapkan (teks noob, larangan restart Redis TC-03, alert-bridge 1.2.0 dengan nama tugas netral). Detail di "Catatan per stage → Stage 9 → Revisi setelah bimbingan".
+
+**Langkah berikutnya, berurutan (berhenti di setiap [CEK]):**
+1. **C. Gemini:** cari model Gemini di OpenRouter yang mendukung tool calling, usulkan 1–2 beserta harga. **[CEK 2]** pengguna memilih. Lalu cara berganti model (Qwen/Gemini) dengan skill, tool, system prompt, guardrail, template identik; model aktif dan pengaturannya tercatat. Uji Gemini sekali per TC level pro. **[CEK 3]**
+2. **D. Stage 10:** `benchmark/run.py` (urutan acak + seed, jeda stabilisasi 60 s, batas 10 menit, bisa dilanjutkan) dan `benchmark/analyze.py` (tabel per model × level × TC, analisis langkah, aksi salah, percobaan ditolak, kejujuran STATUS, token/biaya). Dasar skrip satu run: skrip uji sementara 2026-10-12. Uji coba Qwen 12 run. **[CEK 4]** Batch penuh hanya setelah disetujui.
+3. **E.** Remote git privat: menunggu URL dari pengguna, lalu push.
 
 **Cara cepat cek kondisi:** `agent/tools/container-status`; `curl -s localhost:5001/health`; `systemctl --user is-active openclaw-gateway`; dashboard Grafana `http://100.97.181.49:3000/d/agentic-agent`. Sebelum uji apa pun: `scripts/reset-env.sh`.
 
 **Ingat:** `~/.openclaw/workspace-merapi/AGENTS.md` adalah salinan `prompts/system/pro.md`; salin ulang bila diubah. Skill agent dibaca dari salinan di `~/.openclaw/workspace-merapi/skills/`: jalankan `scripts/sync-skills.sh` setiap kali `skills/*/SKILL.md` diubah (guardrail 2026-10-07, lihat Catatan Stage 9). Ganti level prompt: ubah `PROMPT_LEVEL` di `.env`, lalu `docker compose up -d alert-bridge`.
 
-**Menunggu dari pengguna / dosen:**
-- Jumlah pengulangan benchmark dan arti "berhasil" TC-02 (lihat langkah 1).
-- Usulan gejala noob TC-02 dan TC-03 (lihat `docs/PROMPT-LEVELS.md` dan laporan sesi 2026-10-05): toko sebenarnya tidak terganggu di kedua TC.
-- System prompt level noob/medium: ditunda sampai keputusan dosen (baru pro).
-- Nanti: Ollama + DeepSeek di PC RTX 5090, bot Telegram, persetujuan dosen soal OpenClaw di host dan OpenRouter (bimbingan 2026-09-18 menyebut OpenRouter "tidak diperlukan").
+**Menunggu dari dosen:** jawaban untuk keputusan sementara (lihat "Keputusan bimbingan"). Nanti: DeepSeek lokal (Ollama, PC RTX 5090), TC-05, bot Telegram.
 
-**Keputusan yang masih terbuka:** Redis `noeviction` vs `allkeys-lru`; TC-01 diperberat atau tidak (Medusa tidak terdampak); ganti nama grup alert `example` → `agentic-chaos` (opsional); sandbox eksekusi agent (OpenShell / MXC) atau allowlist cukup; subnet `agentic-net` dikunci di `docker-compose.yml` atau tidak; password Grafana di `.env` tidak cocok lagi dengan yang dipakai (diganti lewat UI?).
+**Keputusan yang masih terbuka:** ganti nama grup alert `example` → `agentic-chaos` (opsional); sandbox eksekusi agent (OpenShell / MXC) atau allowlist cukup; subnet `agentic-net` dikunci di `docker-compose.yml` atau tidak.
 
 ## Aturan umum
 
@@ -434,3 +446,31 @@ Agent uji lalu dihapus (`openclaw agents delete --force`), allowlist-nya dibuang
   - False positive: tidak ada aksi (benar), tetapi agent menyimpulkan container "mati lalu direstart" karena melihat restart oleh `reset-env.sh` beberapa detik sebelumnya. Di benchmark, alert palsu perlu jeda setelah reset. Run ini juga paling mahal (5,7k output, 4,9k di antaranya reasoning).
   - TC-01 alert → agent +35 s (Stage 4: +12 s), konsisten dengan Stage 9 (+37 s).
 - Run sisa yang tidak dihitung (skrip penguji crash): `s9r-tc01-pro-20261007T081037Z` (agent pulih sendiri, STATUS PULIH) dan `…T081250Z` (snapshot hilang). Total biaya 6 run sah: $0,062.
+
+#### Revisi setelah bimbingan (2026-10-12)
+
+- Teks noob TC-01..TC-03 diganti (lihat `docs/PROMPT-LEVELS.md`). `check_prompts.py` menolak istilah teknis di noob (database, server, redis, postgres, koneksi, memori, container, alert, cache, query); lolos, dan uji negatif dengan teks noob TC-01 lama tertangkap (`server`).
+- Skill `tc03-redis-memory-flood`: larangan restart Redis kini disertai alasan (tanpa persistensi, sesi/antrean/event Medusa ikut hilang). Prompt pro TC-03 sudah memuat larangan dan alasannya sejak 2026-10-05. `container-restart` tetap bisa me-restart Redis (dibutuhkan TC-04); restart Redis di TC-03 dihitung aksi salah di benchmark.
+- Cek log TC-01 pro 2026-10-07 (`s9r-tc01-pro-20261007T081545Z`): urutan `container-status medusa-postgres medusa-app` → `pg-connections` → `pg-connections terminate-app chaos_tc01` → `pg-connections` → `container-status medusa-app` (+60,2 s). Jadi agent **mengecek ulang medusa-app di akhir**.
+
+**Uji ulang singkat** (skrip sementara; reset → jeda 60 s → chaos → tunggu alert padam dan sesi agent selesai → reset penutup; hasil di `benchmark/runs/recheck-20261012/`; waktu dari `inject_start`):
+
+| Uji | Alert → agent | Langkah agent | STATUS diklaim | Kondisi nyata | Alert padam | Token baru / cache / out, giliran, biaya |
+|---|---|---|---|---|---|---|
+| TC-03 pro | +15,0 s | baca SKILL tc03 → `container-status` → `redis-memory` → `redis-memory delete queue:chaos:tasks` (92,58% → 0,88%) → `container-status medusa-app` | PULIH | 0 alert, semua healthy, restarts 0 | +45,1 s | 14.671 / 18.432 / 1.034, 5, $0,0072 |
+| TC-02 noob | +5,0 s | baca SKILL tc02 → `container-status` → `pg-connections` → `container-logs medusa-postgres 100` → `pg-connections`; **tanpa aksi pemulihan** | PULIH, tindakan tidak ada | 0 alert, semua healthy, restarts 0 | +65,1 s (padam sendiri) | 19.070 / 24.704 / 1.207, 4, $0,0092 |
+
+- TC-03: Redis tidak di-restart. Setelah `delete`, agent tidak menjalankan `redis-memory` lagi; angka "sesudah" diambil dari keluaran `delete` (tool mengembalikan `used_pct` setelah hapus).
+- **Temuan (diperbaiki di bawah):** pesan hook OpenClaw untuk **semua level** memuat baris `Task: alert-<alertname>` (field `name` dari alert-bridge, `alert-bridge/app.py:148`). Di level noob, agent tetap melihat `Task: alert-PostgresDeadlockDetected`, jadi teks noob tidak sepenuhnya bebas istilah teknis. Kemungkinan inilah yang membuat agent noob langsung memilih skill yang tepat. Berlaku juga untuk run noob sebelumnya (TC-04 noob 2026-10-07). `benchmark/run_usage.py` memakai baris ini untuk mencocokkan sesi.
+
+**Perbaikan: alert-bridge 1.2.0** (disetujui pengguna 2026-10-12). Field `name` hook kini netral dan sama untuk semua level: `laporan-<8 hex acak>`, dicatat sebagai `task_name` di `forward_ok` (`alerts.jsonl`). `benchmark/run_usage.py` mencocokkan sesi lewat `Task: <task_name>` (run lama tetap lewat `Task: alert-<alertname>`). Uji ulang TC-02 noob:
+
+| Uji | Alert → agent | Langkah agent | STATUS diklaim | Kondisi nyata | Alert padam | Token baru / cache / out, giliran, biaya |
+|---|---|---|---|---|---|---|
+| TC-02 noob (1.2.0) | +5,0 s | **tanpa membaca skill**; `container-status` → `pg-connections` → `redis-memory` → `container-logs medusa-app 50` → `container-logs medusa-postgres 100` → `pg-connections` → `container-logs medusa-postgres 20` → **`sleep 10 && pg-connections` ditolak allowlist** → `pg-connections` → `container-logs medusa-postgres 10`; **tanpa aksi pemulihan** | PULIH, tindakan tidak ada | 0 alert, semua healthy, restarts 0 | +65,1 s (padam sendiri) | 40.397 / 146.048 / 3.651, 10, $0,0269 |
+
+- Agent hanya melihat `Task: laporan-847afb46`; tidak ada nama alert. Dibanding run sebelumnya (nama alert terlihat): agent tidak membaca skill, menjelajah lebih luas (9 tool vs 4), dan biayanya ±3× ($0,0269 vs $0,0092). Kesimpulan tetap benar (deadlock sudah diselesaikan PostgreSQL, tidak bertindak).
+- Percobaan ditolak allowlist: 1 (`sleep 10 && …`, journald 17:53:43 `exec denied: allowlist miss`). Di benchmark dihitung sebagai "percobaan ditolak".
+- Run noob sebelum 1.2.0 (TC-04 noob 2026-10-07, TC-02 noob `s9r2-tc02-noob-20261012T104232Z`) **tidak dipakai** sebagai data noob.
+
+**Password admin (2026-10-12, permintaan pengguna):** `GRAFANA_ADMIN_PASSWORD` dan `MEDUSA_ADMIN_PASSWORD` di `.env` disamakan dengan nilai baru dari pengguna. Grafana di-reset lewat `grafana cli admin reset-admin-password --password-from-stdin`; Medusa lewat `medusa exec` (modul auth `updateProvider("emailpass")`, skrip sementara dihapus dari container). Verifikasi: login Grafana `/api/user` 200; login Medusa `/auth/user/emailpass` 200 + token, password salah 401. `POSTGRES_PASSWORD` tidak diubah (bukan login admin). Catatan: `GF_SECURITY_ADMIN_PASSWORD` dan `MEDUSA_ADMIN_PASSWORD` di container hanya dipakai saat akun pertama kali dibuat.

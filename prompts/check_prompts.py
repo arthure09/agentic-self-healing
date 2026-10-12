@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parent.parent
 P = ROOT / "prompts"
 # Data alert yang tersedia di alert-bridge (build_message di alert-bridge/app.py).
 BRIDGE_FIELDS = {"alertname", "severity", "starts_at", "summary", "description"}
+# Istilah teknis yang tidak boleh muncul di teks noob (keputusan dosen 2026-10-12).
+NOOB_BANNED = {"database", "server", "redis", "postgres", "koneksi", "memori", "container", "alert", "cache", "query"}
 
 ALERTS = set(re.findall(r"alert\s*:\s*(\w+)", (ROOT / "observability/prometheus/rules/alerts.yml").read_text()))
 CONTAINERS = set(re.findall(r"container_name:\s*(\S+)", (ROOT / "docker-compose.yml").read_text()))
@@ -36,7 +38,7 @@ for f, text in prompts.items():
     level = f.parent.name
     if level == "noob":
         check("{" not in text, f"2. {name}: memuat placeholder")
-        for kind, words in (("alert", ALERTS), ("container", CONTAINERS), ("skill", SKILLS)):
+        for kind, words in (("alert", ALERTS), ("container", CONTAINERS), ("skill", SKILLS), ("istilah teknis", NOOB_BANNED)):
             check(not found(text, words), f"2. {name}: memuat nama {kind} {found(text, words)}")
     if level == "medium":
         bad = found(text, SKILLS | {"pg_", "redis-cli", "docker", "FLUSH"})

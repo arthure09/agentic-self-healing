@@ -7,8 +7,8 @@ Jendela run = event pertama RUN_ID di events.jsonl sampai reset_done kedua (rese
 penutup; sampai sekarang bila belum ada). Karena itu reset awal, chaos, dan reset
 penutup memakai RUN_ID yang sama. Setiap forward_ok alert-bridge di jendela itu
 dicocokkan ke sesi agent: dibuat <= 60 s setelah forward dan pesan pertamanya
-memuat "Task: alert-<alertname>" (dari field name hook; ada di semua level prompt,
-sedangkan template noob tidak memuat alertname). runId di respons hook tidak
+memuat "Task: <task_name>" (field name hook, dicatat alert-bridge di forward_ok;
+sebelum alert-bridge 1.2.0: "Task: alert-<alertname>"). runId di respons hook tidak
 tersimpan di database OpenClaw, jadi tidak bisa dipakai untuk mencocokkan.
 
 Per sesi (dijumlahkan dari usage setiap pesan assistant):
@@ -88,7 +88,8 @@ def main():
                 (a["forward_sent_ms"] - 2000, a["forward_done_ms"] + 60000)):
             first = c.execute("select text from session_transcript_fts where session_id=? and role='user' limit 1",
                               (sid,)).fetchone()
-            if first and f"Task: alert-{a['alertname']}\n" in first[0] and sid not in claimed:
+            task = a.get("task_name") or f"alert-{a['alertname']}"  # sebelum alert-bridge 1.2.0
+            if first and f"Task: {task}\n" in first[0] and sid not in claimed:
                 hit = (key, sid, created)
                 claimed.add(sid)
                 break

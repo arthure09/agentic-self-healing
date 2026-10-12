@@ -8,7 +8,7 @@ Level menggambarkan **keahlian orang yang menulis prompt**. Agent, model, skill,
 
 | Level | Gaya | Isi |
 |---|---|---|
-| Noob | Bahasa awam | Hanya gejala yang dirasakan pengguna. Tanpa istilah teknis dan tanpa data alert. |
+| Noob | Bahasa awam | Hanya gejala yang dirasakan pengguna. Tanpa istilah teknis sama sekali (termasuk "database" dan "server") dan tanpa data alert. |
 | Medium | Semi-teknis | Menyebut komponen dan gejala, ditambah sedikit data alert (nama alert). |
 | Pro | Teknis lengkap | Data alert lengkap, dugaan penyebab, nama skill, langkah, batasan, dan cara verifikasi. |
 
@@ -25,21 +25,20 @@ Contoh ini hanya ilustrasi. Teks resmi ada di file template (lihat di bawah).
 - **Template:** folder `prompts/` dengan subfolder per level: `prompts/noob/`, `prompts/medium/`, `prompts/pro/`. Setiap subfolder berisi `tc01.txt`..`tc04.txt`, jadi totalnya 12 teks.
 - **Placeholder:** diisi alert-bridge dari data alert. Medium memakai `{alertname}`. Pro memakai `{alertname}`, `{severity}`, `{starts_at}`, `{summary}`, dan `{description}`. Noob tidak memakai placeholder.
 - **Pembuatan:** draf dibuat 2026-10-05 (Stage 9). Template level pro menyebut nama skill dan tool `container-status`. Tool lain disebut sebagai langkah, karena belum dibuat. Dipakai alert-bridge sejak 1.1.0 (2026-10-05).
-- **System prompt (2026-10-05):** keputusan dosen, system prompt juga punya level. Baru versi pro: `prompts/system/pro.md`. Noob dan medium ditunda sampai keputusan dosen. Bagian "Laporan akhir" (`STATUS:`) adalah alat ukur, wajib di semua level, disimpan terpisah di `prompts/system/_report-format.md`. Belum dipasang ke workspace OpenClaw.
-- **Pemeriksaan:** `python3 prompts/check_prompts.py` (kebocoran kata `chaos`, isi noob/medium sesuai definisi, placeholder, nama skill, format laporan).
+- **System prompt (2026-10-05):** keputusan dosen, system prompt juga punya level. Sementara (2026-10-12) system prompt **pro dipakai untuk semua level** sampai dosen menjawab. Baru versi pro: `prompts/system/pro.md`. Noob dan medium ditunda sampai keputusan dosen. Bagian "Laporan akhir" (`STATUS:`) adalah alat ukur, wajib di semua level, disimpan terpisah di `prompts/system/_report-format.md`. Belum dipasang ke workspace OpenClaw.
+- **Pemeriksaan:** `python3 prompts/check_prompts.py` (kebocoran kata `chaos`, isi noob/medium sesuai definisi, placeholder, nama skill, format laporan). Noob juga ditolak bila memuat istilah teknis: database, server, redis, postgres, koneksi, memori, container, alert, cache, query.
 - **Pemilihan level:** `PROMPT_LEVEL=noob|medium|pro` di `.env`. alert-bridge memilih template sesuai level dan skenario (`scenario` di label alert).
 - **Pencatatan:** setiap alert yang diteruskan mencatat `prompt_level` di `benchmark/runs/alerts.jsonl`.
 - **Benchmark (Stage 10):** satu batch per level. Set `PROMPT_LEVEL`, restart alert-bridge, lalu jalankan semua TC. Hasil metrik dikelompokkan per level dan per TC.
 
 ## Dampak ke benchmark
 
-- **Jumlah run:** 3 level × 4 TC × 10 pengulangan (usulan) = **120 run per model**.
+- **Jumlah run:** 3 level × 4 TC × maksimal 10 pengulangan = **120 run per model**.
 - **Perkiraan biaya Qwen:** $0,015–0,03 per run, jadi sekitar $2–4. Angka ini diukur ulang setelah Stage 9.
 
 ## Belum diputuskan
 
-- **Skill di level noob:** apakah agent tetap boleh memakai skill bila menemukannya sendiri? Usulan: boleh, karena skill selalu terpasang dan yang diuji adalah kemampuan agent menghubungkan keluhan awam ke skill yang tepat. Menunggu konfirmasi dosen.
-- **Jumlah pengulangan** per level per TC (usulan 10).
+- Tidak ada lagi untuk level prompt. Skill di level noob **boleh** dilihat agent dan jumlah pengulangan **maksimal 10** (keputusan dosen 2026-10-12, lihat `docs/PLAN.md` → Keputusan bimbingan).
 
 ## Riwayat
 
@@ -47,3 +46,4 @@ Contoh ini hanya ilustrasi. Teks resmi ada di file template (lihat di bawah).
 |---|---|
 | 2026-10-02 | Keputusan dosen tiga level dicatat. Draf template disepakati dibuat oleh Claude dan di-review pengguna. |
 | 2026-10-05 | Template pro ditulis ulang (nama tool asli, kriteria selesai yang bisa dicek tool, alasan setiap batasan). Noob TC-01 diganti (TC-01 tidak membuat toko down). System prompt pro + format laporan + skrip pemeriksaan ditambahkan. |
+| 2026-10-12 | Bimbingan: noob tanpa istilah teknis sama sekali; teks noob TC-01..TC-03 diganti ("notifikasi/peringatan", toko tetap jalan); `check_prompts.py` menolak istilah teknis di noob; skill boleh dilihat di noob; system prompt pro untuk semua level (sementara). |

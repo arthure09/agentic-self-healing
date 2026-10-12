@@ -1,1 +1,1 @@
-Tadi ada pesanan yang gagal diproses di toko online saya, katanya ada error. Tolong cek dan benerin.
+Saya dapat notifikasi ada error di toko online saya, tapi tokonya kelihatan normal. Tolong cek.

@@ -28,6 +28,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -141,11 +142,14 @@ def _forward(alert: dict, base: dict) -> None:
         record("forward_skipped", **base, reason="OPENCLAW_HOOK_URL/TOKEN belum dikonfigurasi")
         return
     message, template = build_message(alert)
-    base = {**base, "prompt_level": PROMPT_LEVEL, "prompt_file": template}
+    # Nama tugas netral dan sama untuk semua level: OpenClaw menampilkannya ke agent
+    # ("Task: ..."), jadi alertname di sini akan bocor ke level noob.
+    base = {**base, "prompt_level": PROMPT_LEVEL, "prompt_file": template,
+            "task_name": f"laporan-{uuid.uuid4().hex[:8]}"}
     body = json.dumps({
         "message": message,
         "agentId": AGENT_ID,
-        "name": f"alert-{base['alertname']}",
+        "name": base["task_name"],
         "deliver": False,  # hasil cukup di sesi run; True memicu putaran tambahan di sesi main
     }).encode()
     last_error = None

@@ -66,7 +66,7 @@ Parameter default: TC-01 45 koneksi ditahan 600 s; TC-02 3 deadlock dengan jeda 
 
 | Komponen | Versi / image | Akses | Dicatat |
 |---|---|---|---|
-| alert-bridge | image lokal `agentic/alert-bridge:1.1.0` (1.0.0 di Stage 6; 1.0.1 di Stage 8: `deliver: false`; 1.1.0 di Stage 9: template `prompts/<PROMPT_LEVEL>/`, alert per skenario digabung) dari `python:3.13.15-slim-trixie`, hanya pustaka standar Python | `127.0.0.1:5001` (`POST /alertmanager`, `GET /health`) | Stage 6, 2026-09-30 |
+| alert-bridge | image lokal `agentic/alert-bridge:1.2.0` (1.0.0 di Stage 6; 1.0.1 di Stage 8: `deliver: false`; 1.1.0 di Stage 9: template `prompts/<PROMPT_LEVEL>/`, alert per skenario digabung; 1.2.0 pada 2026-10-12: nama tugas hook netral `laporan-<id>`, tidak lagi memuat alertname) dari `python:3.13.15-slim-trixie`, hanya pustaka standar Python | `127.0.0.1:5001` (`POST /alertmanager`, `GET /health`) | Stage 6, 2026-09-30 |
 | Alertmanager receiver | webhook `http://alert-bridge:5001/alertmanager`, `send_resolved: true`, `group_by [alertname, scenario]`, `group_wait 0s` | — | Stage 6, 2026-09-30 |
 
 **Log:** `benchmark/runs/alerts.jsonl` (bind mount `/data`, ditulis sebagai uid 1000). Event yang dicatat:

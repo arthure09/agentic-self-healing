@@ -101,8 +101,18 @@ def start(form: dict) -> str:
     levels = [lv for lv in LEVELS if lv in form.get("level", [])]
     tcs = [tc for tc in TCS if tc in form.get("tc", [])]
     reps, seed = form.get("reps", ["1"])[0], form.get("seed", [""])[0].strip()
-    if not NAME_RE.fullmatch(name) or model not in MODELS or not levels or not tcs:
-        return "Isian tidak valid: nama batch (huruf/angka/-/_), model, minimal satu level dan satu TC."
+    print("form /start:", json.dumps(form, ensure_ascii=False), flush=True)  # ke journald, untuk menelusuri isian ditolak
+    errors = []
+    if not NAME_RE.fullmatch(name):
+        errors.append(f"nama batch {name!r} hanya boleh huruf, angka, - dan _ (maks. 40)")
+    if model not in MODELS:
+        errors.append(f"model {model!r} tidak dikenal")
+    if not levels:
+        errors.append("pilih minimal satu level")
+    if not tcs:
+        errors.append("pilih minimal satu TC")
+    if errors:
+        return "Isian tidak valid: " + "; ".join(errors) + "."
     if not reps.isdigit() or not 1 <= int(reps) <= 10 or (seed and not seed.isdigit()):
         return "Pengulangan harus 1–10 dan seed berupa angka."
     plan = BATCHES / name / "plan.json"
@@ -272,7 +282,7 @@ def run_page(msg: str = "") -> bytes:
         f'<label><input type="checkbox" name="{name}" value="{v}"{" checked" if v in on else ""}>{v}</label>' for v in vals)
     form = f"""<section><h2>Jalankan batch</h2>
 <form method="post" action="/start" onsubmit="const n=this.querySelectorAll('[name=level]:checked').length*this.querySelectorAll('[name=tc]:checked').length*this.reps.value;return confirm('Jalankan '+n+' run (±3,5 menit per run, ±'+Math.round(n*3.5/60*10)/10+' jam)?')">
-<div class="row"><label>Nama batch <input name="batch" required pattern="[A-Za-z0-9_-]{{1,40}}" placeholder="qwen-uji"></label>
+<div class="row"><label>Nama batch <input name="batch" required pattern="[A-Za-z0-9_\\-]{{1,40}}" title="huruf, angka, - dan _" placeholder="qwen-uji"></label>
 <label>Model <select name="model">{''.join(f'<option value="{m}">{model_name(m)}</option>' for m in MODELS)}</select></label></div>
 <div class="row">Level: {chk('level', LEVELS, LEVELS)}</div>
 <div class="row">TC: {chk('tc', TCS, TCS)}</div>

@@ -1,0 +1,19 @@
+# Web panel benchmark (benchmark/web.py) sebagai service systemd user.
+# Pasang: ln -sf ~/skripsi/agentic-server-mgmt/scripts/benchmark-web.service ~/.config/systemd/user/
+#         systemctl --user daemon-reload && systemctl --user enable --now benchmark-web
+[Unit]
+Description=Benchmark Agentic web panel
+After=network-online.target
+
+[Service]
+WorkingDirectory=/home/areph09/skripsi/agentic-server-mgmt
+ExecStart=/usr/bin/python3 benchmark/web.py
+# run.py memanggil openclaw (npm global), docker, jq, dan systemctl --user
+Environment=PATH=/usr/bin:/home/areph09/.npm-global/bin:/usr/local/bin:/bin
+Environment=HOME=/home/areph09
+Restart=on-failure
+# Batch berjalan di sesi proses sendiri; jangan ikut dimatikan saat web di-restart
+KillMode=process
+
+[Install]
+WantedBy=default.target

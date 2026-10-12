@@ -17,7 +17,7 @@ Laptop harus tersambung ke Tailscale.
 Layanan ini sengaja hanya terbuka di `127.0.0.1` server. Untuk membukanya dari laptop, jalankan dulu di laptop:
 
 ```bash
-ssh -L 9090:127.0.0.1:9090 -L 9093:127.0.0.1:9093 -L 18789:127.0.0.1:18789 areph09@100.97.181.49
+ssh -L 9090:127.0.0.1:9090 -L 9093:127.0.0.1:9093 -L 18789:127.0.0.1:18789 -L 8090:127.0.0.1:8090 areph09@100.97.181.49
 ```
 
 Selama terminal SSH itu terbuka, alamat di bawah bisa dibuka di browser laptop.
@@ -27,6 +27,7 @@ Selama terminal SSH itu terbuka, alamat di bawah bisa dibuka di browser laptop.
 | Prometheus | http://localhost:9090 | Metrik, status target, dan alert rules (menu Alerts) |
 | Alertmanager | http://localhost:9093 | Alert yang sedang aktif |
 | OpenClaw Dashboard (Control UI) | http://localhost:18789 | Chat dengan agent dan lihat run. Login pertama: lihat di bawah |
+| Benchmark (jalankan batch dan lihat hasil) | http://localhost:8090 | Login `admin` / `BENCH_WEB_PASSWORD`. Di VSCode Remote-SSH cukup forward port 8090 (tab Ports). Service: `systemctl --user status benchmark-web` |
 
 **Login pertama ke OpenClaw Dashboard:** di server jalankan
 

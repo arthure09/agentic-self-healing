@@ -3,9 +3,10 @@
 
     benchmark/run_usage.py RUN_ID [--append]
 
-Jendela run = event pertama RUN_ID di events.jsonl sampai reset_done kedua (reset
-penutup; sampai sekarang bila belum ada). Karena itu reset awal, chaos, dan reset
-penutup memakai RUN_ID yang sama. Setiap forward_ok alert-bridge di jendela itu
+Jendela run = event pertama RUN_ID di events.jsonl sampai event run_end (ditulis
+benchmark/run.py) atau reset_done kedua (reset penutup); sampai sekarang bila
+keduanya tidak ada. Karena itu reset awal, chaos, dan reset penutup memakai RUN_ID
+yang sama. Setiap forward_ok alert-bridge di jendela itu
 dicocokkan ke sesi agent: dibuat <= 60 s setelah forward dan pesan pertamanya
 memuat "Task: <task_name>" (field name hook, dicatat alert-bridge di forward_ok;
 sebelum alert-bridge 1.2.0: "Task: alert-<alertname>"). runId di respons hook tidak
@@ -71,16 +72,20 @@ def session_usage(c, sid):
     return u
 
 
-def main():
-    run_id, append = sys.argv[1], "--append" in sys.argv
+def usage(run_id: str) -> dict:
     events = [e for e in jsonl(RUNS / "events.jsonl") if e.get("run_id") == run_id]
     if not events:
-        sys.exit(f"tidak ada event untuk RUN_ID {run_id}")
+        raise SystemExit(f"tidak ada event untuk RUN_ID {run_id}")
     start = min(e["ts_ms"] for e in events)
     resets = [e["ts_ms"] for e in events if e.get("event") == "reset_done"]
-    end = resets[-1] if len(resets) >= 2 else int(time.time() * 1000)  # reset awal + reset penutup
-    if len(resets) < 2:
-        print(f"PERINGATAN: {run_id} belum punya reset penutup; jendela sampai sekarang", file=sys.stderr)
+    run_end = [e["ts_ms"] for e in events if e.get("event") == "run_end"]
+    if run_end:
+        end = run_end[-1]
+    elif len(resets) >= 2:  # reset awal + reset penutup
+        end = resets[-1]
+    else:
+        end = int(time.time() * 1000)
+        print(f"PERINGATAN: {run_id} belum punya run_end/reset penutup; jendela sampai sekarang", file=sys.stderr)
     cfg = next((e for e in events if e.get("event") == "run_config"), {})
     agent = cfg.get("bridge_agent_id") or "merapi"
     c = sqlite3.connect(f"file:{str(DB).format(agent=agent)}?mode=ro", uri=True)
@@ -114,6 +119,12 @@ def main():
            "sessions": len(sessions), "unmatched_forwards": unmatched, **total,
            "run_config": {k: v for k, v in cfg.items() if k not in ("ts_ms", "run_id", "scenario", "event", "host")},
            "per_session": sessions}
+    return row
+
+
+def main():
+    run_id, append = sys.argv[1], "--append" in sys.argv
+    row = usage(run_id)
     print(json.dumps(row, ensure_ascii=False, indent=1))
     if append:
         with open(RUNS / "usage.jsonl", "a") as f:

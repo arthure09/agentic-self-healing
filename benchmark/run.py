@@ -62,6 +62,21 @@ def log(*a) -> None:
     print(f"[{time.strftime('%H:%M:%S')}]", *a, flush=True)
 
 
+STATUS: dict = {}  # tahap yang sedang berjalan, dibaca benchmark/web.py
+
+
+def phase(name: str, **kw) -> None:
+    if name == "reset":  # run baru: buang data run sebelumnya
+        for k in ("inject_ms", "alert_fired_ms", "alert_cleared"):
+            STATUS.pop(k, None)
+    if name != STATUS.get("phase"):
+        STATUS["phase_started_ms"] = ms()
+    STATUS["expected_s"] = kw.pop("expected_s", None)  # perkiraan/batas lama tahap ini
+    STATUS.update(kw, phase=name)
+    if STATUS.get("file"):
+        Path(STATUS["file"]).write_text(json.dumps(STATUS))
+
+
 def get_json(url: str):
     with urllib.request.urlopen(url, timeout=5) as r:
         return json.load(r)
@@ -170,11 +185,13 @@ def one_run(key: str, spec: dict, model: str, out: Path) -> None:
     tc, level = spec["tc"], spec["level"]
     run_id = f"{key}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
     started = ms()
+    phase("reset", key=key, run_id=run_id, level=level, tc=tc, rep=spec["rep"], run_started_ms=started)
     check_health(model)
     set_level(level)
     env = {**os.environ, "RUN_ID": run_id}
     sh("scripts/reset-env.sh", env=env)
     log(f"{run_id}: reset selesai, stabilisasi {STABILIZE_S} s")
+    phase("stabilisasi", expected_s=STABILIZE_S)
     time.sleep(STABILIZE_S)
 
     inject = ms()
@@ -182,6 +199,7 @@ def one_run(key: str, spec: dict, model: str, out: Path) -> None:
     chaos = subprocess.Popen([str(ROOT / ".venv/bin/python"), str(ROOT / "chaos" / CHAOS[tc])],
                              cwd=ROOT, env=env, stdout=chaos_log, stderr=subprocess.STDOUT)
     log(f"{run_id}: chaos {tc} disuntik (level {level})")
+    phase("menunggu alert padam", expected_s=ALERT_TIMEOUT_S, inject_ms=inject)
 
     c = sqlite3.connect(f"file:{str(DB).format(agent='merapi')}?mode=ro", uri=True)
     fired_ms = clear_ms = None
@@ -190,10 +208,12 @@ def one_run(key: str, spec: dict, model: str, out: Path) -> None:
         active = prom("ALERTS")
         if active and not fired_ms:
             fired_ms = ms()
+            phase("menunggu alert padam", expected_s=ALERT_TIMEOUT_S, alert_fired_ms=fired_ms)
         if fired_ms and not active:
             clear_ms = ms()
             break
     log(f"{run_id}: alert {'padam' if clear_ms else 'tidak padam / tidak muncul'}; menunggu agent")
+    phase("menunggu agent", expected_s=AGENT_TIMEOUT_S, alert_cleared=bool(clear_ms))
     agent_deadline = ms() + AGENT_TIMEOUT_S * 1000
     while True:
         sess = sessions_since(c, inject)
@@ -202,6 +222,7 @@ def one_run(key: str, spec: dict, model: str, out: Path) -> None:
             break
         time.sleep(POLL_S)
     agent_done_ms = ms()
+    phase("menyimpan")
     snap = snapshot()
 
     chaos.terminate()
@@ -267,15 +288,19 @@ def main():
     # SIGTERM -> SystemExit, supaya blok finally (kembalikan level + reset) tetap jalan
     signal.signal(signal.SIGTERM, lambda *_: sys.exit("dihentikan (SIGTERM)"))
     original_level = env_level()
+    STATUS.update(file=str(out / "status.json"), batch=a.batch, total=len(plan["runs"]))
     sh("scripts/set-model.sh", a.model)
     try:
-        for r in plan["runs"]:
+        for i, r in enumerate(plan["runs"], 1):
             if (out / "results" / f"{r['key']}.json").exists():
                 continue
+            STATUS["index"] = i
             one_run(r["key"], {k: r[k] for k in ("level", "tc", "rep")}, a.model, out)
     finally:
+        phase("reset penutup", expected_s=45)
         set_level(original_level)
         sh("scripts/reset-env.sh", env={**os.environ, "RUN_ID": f"{a.batch}-closing-reset"})
+        phase("selesai")
     done = sum((out / "results" / f"{r['key']}.json").exists() for r in plan["runs"])
     log(f"batch {a.batch}: {done}/{len(plan['runs'])} run selesai")
 

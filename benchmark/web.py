@@ -22,6 +22,9 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import analyze
+from run import MODELS
+
 ROOT = Path(__file__).resolve().parent.parent
 BATCHES = ROOT / "benchmark" / "runs" / "batches"
 ACTIVE = BATCHES / ".active.json"
@@ -29,7 +32,8 @@ ENV = dict(line.split("=", 1) for line in (ROOT / ".env").read_text().splitlines
            if "=" in line and not line.lstrip().startswith("#"))
 HOST, PORT = ENV.get("BENCH_WEB_HOST", "127.0.0.1"), int(ENV.get("BENCH_WEB_PORT", "8090"))
 PASSWORD = ENV.get("BENCH_WEB_PASSWORD", "")
-LEVELS, TCS, MODELS = ("noob", "medium", "pro"), ("tc01", "tc02", "tc03", "tc04"), ("qwen", "gemini")
+LEVELS, TCS = ("noob", "medium", "pro"), ("tc01", "tc02", "tc03", "tc04")
+model_name = lambda alias: MODELS.get(alias, alias).removeprefix("openrouter/")  # noqa: E731
 NAME_RE = re.compile(r"[A-Za-z0-9_-]{1,40}")
 CSV_FILES = ("runs.csv", "summary.csv", "analysis.md")
 
@@ -46,7 +50,20 @@ button{background:var(--accent);color:#fff;border:0;cursor:pointer}button.stop{b
 .row{margin:10px 0}.muted{color:var(--muted)}.ok{color:var(--ok)}.bad{color:var(--bad)}
 .scroll{overflow-x:auto}table{border-collapse:collapse;margin:8px 0;font-size:13px}th,td{border:1px solid var(--line);padding:4px 8px;text-align:left;vertical-align:top}
 th{background:var(--bg)}pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px;overflow:auto;max-height:420px;font-size:12px}
-.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;max-width:420px}.bar div{height:100%;background:var(--accent)}
+.bar{height:14px;background:var(--line);border-radius:7px;overflow:hidden}.bar div{height:100%;background:var(--accent);transition:width .8s ease}
+.bar.live div{background-image:linear-gradient(45deg,rgba(255,255,255,.22) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.22) 50%,rgba(255,255,255,.22) 75%,transparent 75%);background-size:28px 28px;animation:stripe 1s linear infinite}
+.bar.thin{height:8px}@keyframes stripe{to{background-position:28px 0}}
+.big{font-size:28px;font-weight:600}.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:12px 0}
+.stat{border:1px solid var(--line);border-radius:8px;padding:10px}.stat small{color:var(--muted);display:block}
+.steps{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}.steps span{padding:4px 10px;border-radius:14px;border:1px solid var(--line);color:var(--muted);font-size:13px}
+.steps span.done{color:var(--ok);border-color:var(--ok)}.steps span.now{color:#fff;background:var(--accent);border-color:var(--accent);animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.6}}
+.tiles{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0}.tiles i{width:18px;height:18px;border-radius:4px;background:var(--line);display:inline-block}
+.tiles i.ok{background:var(--ok)}.tiles i.fail{background:var(--bad)}.tiles i.run{background:var(--accent);animation:pulse 1.2s ease-in-out infinite}
+.tiles i.warn{background:var(--ok);outline:3px solid var(--bad);outline-offset:-3px}
+.legend{font-size:12px;color:var(--muted)}.legend i{width:10px;height:10px;display:inline-block;border-radius:2px;margin:0 4px 0 10px;vertical-align:middle}
+details summary{cursor:pointer;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 """
 
 
@@ -68,7 +85,7 @@ def batches() -> list[dict]:
     for d in sorted(BATCHES.glob("*/plan.json"), key=lambda p: p.stat().st_mtime, reverse=True):
         plan = json.loads(d.read_text())
         done = sum((d.parent / "results" / f"{r['key']}.json").exists() for r in plan["runs"])
-        out.append({"name": d.parent.name, "model": plan["model"], "seed": plan["seed"], "total": len(plan["runs"]),
+        out.append({"name": d.parent.name, "model": model_name(plan["model"]), "seed": plan["seed"], "total": len(plan["runs"]),
                     "done": done, "levels": sorted({r["level"] for r in plan["runs"]}, key=LEVELS.index),
                     "tcs": sorted({r["tc"] for r in plan["runs"]}),
                     "reps": max(r["rep"] for r in plan["runs"]), "created": time.strftime(
@@ -89,7 +106,7 @@ def start(form: dict) -> str:
     if not reps.isdigit() or not 1 <= int(reps) <= 10 or (seed and not seed.isdigit()):
         return "Pengulangan harus 1–10 dan seed berupa angka."
     plan = BATCHES / name / "plan.json"
-    if plan.exists() and json.loads(plan.read_text())["model"] != model:
+    if plan.exists() and json.loads(plan.read_text())["model"] != model:  # alias qwen/gemini di plan
         return f"Batch {name} sudah ada dengan model lain."
     cmd = [sys.executable, "benchmark/run.py", "--batch", name, "--model", model,
            "--levels", ",".join(levels), "--tcs", ",".join(tcs), "--reps", reps] + (["--seed", seed] if seed else [])
@@ -146,8 +163,83 @@ def md_to_html(md: str) -> str:
     return "\n".join(out)
 
 
-def page(title: str, body: str, refresh: bool = False) -> bytes:
-    meta = '<meta http-equiv="refresh" content="15">' if refresh else ""
+PHASES = ["reset", "stabilisasi", "menunggu alert padam", "menunggu agent", "menyimpan"]
+_metric_cache: dict = {}
+
+
+def run_metrics(f: Path) -> dict:
+    """analyze.metrics untuk satu hasil, di-cache menurut mtime berkas."""
+    key = (f, f.stat().st_mtime)
+    if key not in _metric_cache:
+        _metric_cache[key] = analyze.metrics(json.loads(f.read_text()))
+    return _metric_cache[key]
+
+
+def api_status() -> dict:
+    a = active()
+    if not a:
+        return {"active": None}
+    d = BATCHES / a["batch"]
+    plan = json.loads((d / "plan.json").read_text()) if (d / "plan.json").exists() else {"runs": []}
+    st = json.loads((d / "status.json").read_text()) if (d / "status.json").exists() else {}
+    runs, durations = [], []
+    for r in plan["runs"]:
+        f = d / "results" / f"{r['key']}.json"
+        item = {"level": r["level"], "tc": r["tc"], "rep": r["rep"], "state": "pending"}
+        if f.exists():
+            m = run_metrics(f)
+            item.update(state="ok" if m["success"] else "fail", wrong=m["wrong_actions"] > 0,
+                        recovery_s=m["recovery_s"], cost=m["cost_usd"], pattern=m["pattern"])
+            res = json.loads(f.read_text())
+            durations.append((res["agent_done_ms"] - res["started_ms"]) / 1000)
+        elif r["key"] == st.get("key"):
+            item["state"] = "run"
+        runs.append(item)
+    done = [x for x in runs if x["state"] in ("ok", "fail")]
+    remaining = len(runs) - len(done)
+    # perkiraan: rata-rata run selesai di batch ini, atau 3,5 menit bila belum ada
+    avg = sum(durations) / len(durations) if durations else 210
+    return {"active": a, "now_ms": int(time.time() * 1000), "model": model_name(plan.get("model", "")),
+            "status": st, "runs": runs, "phases": PHASES, "eta_s": round(avg * remaining),
+            "avg_run_s": round(avg) if durations else None,
+            "totals": {"ok": sum(x["state"] == "ok" for x in runs), "fail": sum(x["state"] == "fail" for x in runs),
+                       "wrong": sum(bool(x.get("wrong")) for x in runs),
+                       "cost": round(sum(x.get("cost") or 0 for x in runs), 4)},
+            "log": log_tail(a["batch"], 25)}
+
+
+LIVE_JS = """
+const fmt=s=>{s=Math.max(0,Math.round(s));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return (h?h+' j ':'')+(h||m?m+' m ':'')+x+' d'};
+const $=id=>document.getElementById(id);
+async function tick(){
+  let d; try{d=await (await fetch('/api/status')).json()}catch(e){return}
+  if(!d.active){location.href='/?msg='+encodeURIComponent('Batch selesai atau berhenti. Lihat halaman Hasil.');return}
+  const n=d.runs.length, done=d.totals.ok+d.totals.fail, st=d.status||{};
+  $('count').textContent=done+' / '+n+' run selesai · '+d.model;
+  $('bar').style.width=(n?100*done/n:0)+'%';
+  $('eta').textContent=(done<n?'Perkiraan selesai dalam '+fmt(d.eta_s):'Reset penutup…')+(d.avg_run_s?' (rata-rata '+fmt(d.avg_run_s)+' per run)':'');
+  $('s-ok').textContent=d.totals.ok+' / '+done; $('s-fail').textContent=d.totals.fail;
+  $('s-wrong').textContent=d.totals.wrong; $('s-cost').textContent='$'+d.totals.cost.toFixed(4);
+  const el=st.phase_started_ms?(d.now_ms-st.phase_started_ms)/1000:0, i=d.phases.indexOf(st.phase);
+  $('cur-title').textContent=st.key?('Run '+(st.index||'?')+': '+st.level+' · '+st.tc.toUpperCase()+' · ulangan '+st.rep):'Run sekarang';
+  $('steps').innerHTML=(i<0?[st.phase||'menyiapkan']:d.phases).map((p,k)=>'<span class="'+(i<0?'now':k<i?'done':k==i?'now':'')+'">'+(i>=0&&k<i?'✓ ':'')+p+'</span>').join('');
+  let info=fmt(el)+' di tahap ini';
+  if(st.expected_s){$('pbar').style.width=Math.min(100,100*el/st.expected_s)+'%';
+    info+=st.phase=='stabilisasi'?' · sisa '+fmt(st.expected_s-el):' · batas '+fmt(st.expected_s)}
+  else $('pbar').style.width=(st.phase=='menyimpan'?100:0)+'%';
+  if(st.phase=='menunggu alert padam'&&st.inject_ms) info+=st.alert_fired_ms?' · alert muncul +'+fmt((st.alert_fired_ms-st.inject_ms)/1000)+' setelah chaos':' · alert belum muncul';
+  if(st.phase=='menunggu agent') info+=st.alert_cleared?' · alert sudah padam':' · alert tidak padam sebelum batas';
+  $('pinfo').textContent=info;
+  $('tiles').innerHTML=d.runs.map((r,k)=>'<i class="'+({ok:r.wrong?'warn':'ok',fail:'fail',run:'run'}[r.state]||'')+'" title="'+(k+1)+'. '+r.level+' '+r.tc+' r'+r.rep+
+    (r.state=='ok'||r.state=='fail'?' · '+(r.state=='ok'?'berhasil':'gagal')+(r.wrong?', aksi salah':'')+' · pulih '+(r.recovery_s??'–')+' s · $'+(r.cost??0).toFixed(4)+' · '+r.pattern:'')+'"></i>').join('');
+  $('log').textContent=d.log;
+}
+tick(); setInterval(tick,3000);
+"""
+
+
+def page(title: str, body: str) -> bytes:
+    meta = ""
     return f"""<!doctype html><html lang="id"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">{meta}<title>{html.escape(title)}</title>
 <style>{CSS}</style></head><body><header><b>Benchmark Agentic</b><a href="/">Jalankan</a><a href="/hasil">Hasil</a></header>
@@ -159,14 +251,21 @@ def run_page(msg: str = "") -> bytes:
     bs = batches()
     note = f'<section><b>{html.escape(msg)}</b></section>' if msg else ""
     if a:
-        b = next((x for x in bs if x["name"] == a["batch"]), None)
-        pct = 100 * b["done"] / b["total"] if b and b["total"] else 0
-        status = f"""<section><h2>Sedang berjalan: {html.escape(a['batch'])}</h2>
-<p class="muted">{html.escape(' '.join(a['cmd']))} · mulai {time.strftime('%H:%M', time.localtime(a['started_ms'] / 1000))}</p>
-<p>{b['done'] if b else 0}/{b['total'] if b else '?'} run selesai</p><div class="bar"><div style="width:{pct:.0f}%"></div></div>
+        status = f"""<section id="live"><h2>Sedang berjalan: {html.escape(a['batch'])}</h2>
+<p class="muted">{html.escape(' '.join(a['cmd']))}</p>
+<div class="big" id="count">…</div><div class="bar live"><div id="bar" style="width:0"></div></div>
+<p class="muted" id="eta"></p>
+<div class="grid2"><div class="stat"><small>Berhasil</small><b id="s-ok">–</b></div>
+<div class="stat"><small>Gagal</small><b id="s-fail">–</b></div><div class="stat"><small>Ada aksi salah</small><b id="s-wrong">–</b></div>
+<div class="stat"><small>Biaya sejauh ini</small><b id="s-cost">–</b></div></div>
+<h3 id="cur-title">Run sekarang</h3><div class="steps" id="steps"></div>
+<div class="bar thin"><div id="pbar" style="width:0"></div></div><p class="muted" id="pinfo"></p>
+<h3>Semua run</h3><div class="tiles" id="tiles"></div>
+<div class="legend"><i style="background:var(--line)"></i>belum<i style="background:var(--accent)"></i>berjalan<i style="background:var(--ok)"></i>berhasil<i class="warn" style="background:var(--ok);outline:2px solid var(--bad)"></i>berhasil, ada aksi salah<i style="background:var(--bad)"></i>gagal</div>
 <form method="post" action="/stop" onsubmit="return confirm('Hentikan batch? Run yang sedang berjalan dibatalkan, lalu stack di-reset.')">
-<p><button class="stop">Hentikan</button></p></form><h3>Log</h3><pre>{html.escape(log_tail(a['batch']))}</pre>
-<p class="muted">Halaman diperbarui otomatis tiap 15 detik.</p></section>"""
+<p><button class="stop">Hentikan</button></p></form>
+<details><summary>Log</summary><pre id="log"></pre></details></section>
+<script>{LIVE_JS}</script>"""
     else:
         status = '<section><h2>Status</h2><p class="ok">Tidak ada batch yang berjalan.</p></section>'
     chk = lambda name, vals, on: "".join(  # noqa: E731
@@ -174,7 +273,7 @@ def run_page(msg: str = "") -> bytes:
     form = f"""<section><h2>Jalankan batch</h2>
 <form method="post" action="/start" onsubmit="const n=this.querySelectorAll('[name=level]:checked').length*this.querySelectorAll('[name=tc]:checked').length*this.reps.value;return confirm('Jalankan '+n+' run (±3,5 menit per run, ±'+Math.round(n*3.5/60*10)/10+' jam)?')">
 <div class="row"><label>Nama batch <input name="batch" required pattern="[A-Za-z0-9_-]{{1,40}}" placeholder="qwen-uji"></label>
-<label>Model <select name="model">{''.join(f'<option>{m}</option>' for m in MODELS)}</select></label></div>
+<label>Model <select name="model">{''.join(f'<option value="{m}">{model_name(m)}</option>' for m in MODELS)}</select></label></div>
 <div class="row">Level: {chk('level', LEVELS, LEVELS)}</div>
 <div class="row">TC: {chk('tc', TCS, TCS)}</div>
 <div class="row"><label>Pengulangan <input name="reps" type="number" min="1" max="10" value="1" style="width:5em"></label>
@@ -186,7 +285,7 @@ def run_page(msg: str = "") -> bytes:
 <td><a href="/hasil?batch={urllib.parse.quote(b['name'])}">hasil</a></td></tr>""" for b in bs)
     table = (f"""<section><h2>Batch</h2><div class="scroll"><table><tr><th>Nama</th><th>Model</th><th>Level</th><th>TC</th>
 <th>Ulang</th><th>Seed</th><th>Selesai</th><th>Dibuat</th><th></th></tr>{rows}</table></div></section>""" if bs else "")
-    return page("Jalankan · Benchmark", note + status + form + table, refresh=bool(a))
+    return page("Jalankan · Benchmark", note + status + form + table)
 
 
 def result_page(names: list[str]) -> bytes:
@@ -243,6 +342,8 @@ class Handler(BaseHTTPRequestHandler):
         q = urllib.parse.parse_qs(url.query)
         if url.path == "/":
             self._send(200, run_page(q.get("msg", [""])[0]))
+        elif url.path == "/api/status":
+            self._send(200, json.dumps(api_status(), ensure_ascii=False).encode(), "application/json")
         elif url.path == "/hasil":
             self._send(200, result_page(q.get("batch", [])))
         elif url.path == "/file":

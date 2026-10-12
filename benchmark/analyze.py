@@ -137,7 +137,7 @@ def metrics(r: dict) -> dict:
     u = r["usage"]
     sec = lambda a, b: round((a - b) / 1000, 1) if a is not None and b is not None else None  # noqa: E731
     return {
-        "model": r["model"], "level": r["level"], "tc": tc, "rep": r["rep"], "run_id": r["run_id"],
+        "model": r["model_ref"].removeprefix("openrouter/"), "level": r["level"], "tc": tc, "rep": r["rep"], "run_id": r["run_id"],
         "model_ref": r["model_ref"], "commit": r["git"]["commit"][:7] + ("+dirty" if r["git"]["dirty"] else ""),
         "thinking": ",".join(sorted({str(s.get("thinking_level")) for s in u["per_session"]})),
         "sessions": len(r["sessions"]), "agent_timeout": r["agent_timeout"],

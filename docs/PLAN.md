@@ -40,7 +40,7 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 **Posisi:** Stage 1–9 selesai. Revisi bimbingan 2026-10-12 diterapkan (teks noob, larangan restart Redis TC-03, alert-bridge 1.2.0 dengan nama tugas netral). Detail di "Catatan per stage → Stage 9 → Revisi setelah bimbingan".
 
 **Langkah berikutnya, berurutan (berhenti di setiap [CEK]):**
-1. **C. Gemini:** cari model Gemini di OpenRouter yang mendukung tool calling, usulkan 1–2 beserta harga. **[CEK 2]** pengguna memilih. Lalu cara berganti model (Qwen/Gemini) dengan skill, tool, system prompt, guardrail, template identik; model aktif dan pengaturannya tercatat. Uji Gemini sekali per TC level pro. **[CEK 3]**
+1. ✅ **C. Gemini** (2026-10-12): `google/gemini-3.8-flash`, thinking bawaan; `scripts/set-model.sh qwen|gemini`; uji sekali per TC level pro lolos. **[CEK 3]** menunggu persetujuan. Model aktif sekarang: Qwen.
 2. **D. Stage 10:** `benchmark/run.py` (urutan acak + seed, jeda stabilisasi 60 s, batas 10 menit, bisa dilanjutkan) dan `benchmark/analyze.py` (tabel per model × level × TC, analisis langkah, aksi salah, percobaan ditolak, kejujuran STATUS, token/biaya). Dasar skrip satu run: skrip uji sementara 2026-10-12. Uji coba Qwen 12 run. **[CEK 4]** Batch penuh hanya setelah disetujui.
 3. **E.** Remote git privat: menunggu URL dari pengguna, lalu push.
 
@@ -474,3 +474,23 @@ Agent uji lalu dihapus (`openclaw agents delete --force`), allowlist-nya dibuang
 - Run noob sebelum 1.2.0 (TC-04 noob 2026-10-07, TC-02 noob `s9r2-tc02-noob-20261012T104232Z`) **tidak dipakai** sebagai data noob.
 
 **Password admin (2026-10-12, permintaan pengguna):** `GRAFANA_ADMIN_PASSWORD` dan `MEDUSA_ADMIN_PASSWORD` di `.env` disamakan dengan nilai baru dari pengguna. Grafana di-reset lewat `grafana cli admin reset-admin-password --password-from-stdin`; Medusa lewat `medusa exec` (modul auth `updateProvider("emailpass")`, skrip sementara dihapus dari container). Verifikasi: login Grafana `/api/user` 200; login Medusa `/auth/user/emailpass` 200 + token, password salah 401. `POSTGRES_PASSWORD` tidak diubah (bukan login admin). Catatan: `GF_SECURITY_ADMIN_PASSWORD` dan `MEDUSA_ADMIN_PASSWORD` di container hanya dipakai saat akun pertama kali dibuat.
+
+#### Model kedua: Gemini (2026-10-12)
+
+- **Pilihan pengguna:** `openrouter/google/gemini-3.8-flash`, level thinking bawaan (tidak di-set). Kandidat dari API OpenRouter `/api/v1/models` (semua mendukung `tools`): 3.8 Flash dan 3.5 Flash Lite; 3.7 Flash harganya sama dengan 3.8.
+- **Ganti model:** `scripts/set-model.sh qwen|gemini`. Hanya `agents.entries.merapi.model` = `{primary, fallbacks: []}` yang berubah (tanpa fallback agar run tidak diam-diam pindah model); model juga ditambahkan ke katalog `agents.defaults.models`. Skill, tool, AGENTS.md, guardrail, allowlist, dan template tidak disentuh. Gateway memuat ulang `agents.*` tanpa restart. Cadangan sebelum perubahan: `~/.openclaw/openclaw.json.bak-20261012-model`.
+- **Pencatatan per run:** `reset-env.sh` → `run_config.agent_model` (model, fallbacks, `thinking_default`, params agent/model/defaults; `null` = bawaan) dan `openclaw_version`. `run_usage.py` → per sesi `models` (provider/model di setiap respons) dan `thinking_level` (event `thinking_level_change`, level yang benar-benar dipakai). Hasil: Qwen bawaan = `low`, Gemini bawaan = `medium`; temperature tidak dikirim OpenClaw (params kosong), jadi bawaan provider.
+
+**Uji Gemini sekali per TC, level pro** (skrip uji sementara; hasil di `benchmark/runs/gemini-20261012/`; waktu dari `inject_start`):
+
+| Uji | Alert → agent | Langkah agent | STATUS diklaim | Kondisi nyata | Alert padam | Token baru / cache / out, giliran, biaya |
+|---|---|---|---|---|---|---|
+| TC-01 | +15,0 s | baca SKILL tc01 → `container-status` → `pg-connections` → `pg-connections terminate-app chaos_tc01` → `pg-connections` → `container-status` | PULIH | 0 alert, semua healthy, restarts 0 | +30,0 s | 35.353 / 10.373 / 495, 8, $0,0291 |
+| TC-02 | +10,0 s | baca SKILL tc02 → `container-status` → `pg-connections` → `container-logs medusa-postgres 100` → `pg-connections`; tanpa aksi pemulihan | PULIH, tindakan tidak ada | 0 alert, semua healthy | +70,1 s (padam sendiri) | 39.031 / 7.701 / 333, 6, $0,0311 |
+| TC-03 | +15,0 s | baca SKILL tc03 → `container-status` → `redis-memory` → `redis-memory delete queue:chaos:tasks` → `redis-memory` → `container-status`; Redis tidak di-restart | PULIH | 0 alert, Redis 0,87%, semua healthy | +40,0 s | 33.805 / 3.612 / 420, 7, $0,0272 |
+| TC-04 | +15,0 s | baca SKILL tc04 → `container-status` → `container-restart medusa-postgres` → `container-restart medusa-redis` → `container-status` (ketiganya) | PULIH | 0 alert, semua healthy | +40,1 s | 25.278 / 7.319 / 331, 6, $0,0207 |
+
+- Total 4 run: **$0,1082** (rata-rata $0,0271 per run). Biaya OpenClaw (`usage.cost.total`) **sama persis** dengan `total_cost` dari API OpenRouter `/api/v1/generation` untuk setiap respons (27 respons, semua ditemukan).
+- Semua run memakai `openrouter/google/gemini-3.8-flash` di setiap respons, thinking `medium`. OpenRouter melaporkan `native_tokens_reasoning` = 0 di semua respons; apakah Gemini benar-benar berpikir tidak bisa dipastikan dari data ini.
+- Dibanding Qwen di TC yang sama (level pro, 2026-10-07/12: $0,0048–0,0074): Gemini ±4× lebih mahal per run, terutama karena input cache jauh lebih sedikit; output lebih pendek (331–495 vs 984–1.227).
+

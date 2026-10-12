@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Kembalikan stack ke kondisi awal yang identik sebelum setiap run pengujian:
 #   0. salin skill ke workspace agent (sync-skills.sh) dan catat event run_config
-#      (sha256 SKILL.md, AGENTS.md, openclaw.json; PROMPT_LEVEL .env & alert-bridge)
+#      (sha256 SKILL.md, AGENTS.md, openclaw.json; PROMPT_LEVEL .env & alert-bridge;
+#      model agent, fallback, thinkingDefault, params, versi OpenClaw)
 #   1. hentikan chaos script yang masih berjalan (pidfile)
 #   2. putus koneksi chaos di PostgreSQL, bersihkan tabel uji TC-02
 #   3. restart PostgreSQL, Redis (tanpa persistensi -> kosong), lalu Medusa
@@ -70,8 +71,14 @@ bridge="$(curl -sf -m 5 http://127.0.0.1:5001/health || echo '{}')"
 event run_config "$(jq -cn --argjson skills "$skills_json" \
   --arg agents "$(sha "$OC/workspace-merapi/AGENTS.md")" --arg oc "$(sha "$OC/openclaw.json")" \
   --arg env_level "${PROMPT_LEVEL:-}" --argjson bridge "$bridge" \
+  --argjson model "$(jq -c '.agents as $a | ($a.entries.merapi.model.primary // $a.defaults.model.primary) as $m |
+      {model:$m, fallbacks:($a.entries.merapi.model.fallbacks // $a.defaults.model.fallbacks // []),
+       thinking_default:($a.entries.merapi.thinkingDefault // $a.defaults.thinkingDefault),
+       params:{agent:$a.entries.merapi.params, model:$a.defaults.models[$m].params, defaults:$a.defaults.params}}' "$OC/openclaw.json")" \
+  --arg oc_version "$(openclaw --version 2>/dev/null | grep -o '[0-9][0-9.]* ([0-9a-f]*)' | head -1)" \
   '{skill_sha256:$skills, agents_md_sha256:$agents, openclaw_json_sha256:$oc,
-    prompt_level_env:$env_level, prompt_level_bridge:$bridge.prompt_level, bridge_agent_id:$bridge.agent_id}')" >/dev/null
+    prompt_level_env:$env_level, prompt_level_bridge:$bridge.prompt_level, bridge_agent_id:$bridge.agent_id,
+    agent_model:$model, openclaw_version:$oc_version}')" >/dev/null
 
 # 1. Hentikan chaos script yang masih berjalan
 killed=()

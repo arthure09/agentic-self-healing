@@ -17,6 +17,8 @@ Per sesi (dijumlahkan dari usage setiap pesan assistant):
   output            token output, termasuk reasoning (usage.output)
   turns             jumlah giliran model (pesan assistant)
   cost_usd          usage.cost.total, dilaporkan OpenRouter (totalOrigin)
+  models            provider/model di setiap pesan assistant (harus satu)
+  thinking_level    event thinking_level_change sesi (level yang dipakai)
 Catatan: angka token Stage 9 di PLAN.md = jumlah input_new saja.
 --append menambahkan satu baris ke benchmark/runs/usage.jsonl.
 """
@@ -43,9 +45,13 @@ def event_json(j, z):
 
 def session_usage(c, sid):
     u = {"turns": 0, "input_new": 0, "input_cache_read": 0, "cache_write": 0, "output": 0,
-         "reasoning": 0, "cost_usd": 0.0, "cost_origin": set(), "response_ids": []}
+         "reasoning": 0, "cost_usd": 0.0, "cost_origin": set(), "response_ids": [],
+         "models": set(), "thinking_level": None}
     for j, z in c.execute("select event_json, event_zstd from transcript_events where session_id=? order by seq", (sid,)):
-        m = event_json(j, z).get("message") or {}
+        e = event_json(j, z)
+        if e.get("type") == "thinking_level_change":  # level hasil resolusi OpenClaw (bawaan bila tidak di-set)
+            u["thinking_level"] = e.get("thinkingLevel")
+        m = e.get("message") or {}
         if m.get("role") != "assistant" or not m.get("usage"):
             continue
         us, cost = m["usage"], m["usage"].get("cost") or {}
@@ -58,7 +64,9 @@ def session_usage(c, sid):
         u["cost_usd"] += cost.get("total", 0)
         u["cost_origin"].add(cost.get("totalOrigin", "?"))
         u["response_ids"].append(m.get("responseId"))
+        u["models"].add(f"{m.get('provider')}/{m.get('model')}")
     u["cost_origin"] = sorted(u["cost_origin"])
+    u["models"] = sorted(u["models"])
     u["cost_usd"] = round(u["cost_usd"], 6)
     return u
 

@@ -207,8 +207,8 @@ def api_status() -> dict:
         runs.append(item)
     done = [x for x in runs if x["state"] in ("ok", "fail")]
     remaining = len(runs) - len(done)
-    # perkiraan: rata-rata run selesai di batch ini, atau 3,5 menit bila belum ada
-    avg = sum(durations) / len(durations) if durations else 210
+    # perkiraan: rata-rata run selesai di batch ini, atau 161 s (median uji coba qwen-uji-1) bila belum ada
+    avg = sum(durations) / len(durations) if durations else 161
     return {"active": a, "now_ms": int(time.time() * 1000), "model": model_name(plan.get("model", "")),
             "status": st, "runs": runs, "phases": PHASES, "eta_s": round(avg * remaining),
             "avg_run_s": round(avg) if durations else None,
@@ -281,7 +281,7 @@ def run_page(msg: str = "") -> bytes:
     chk = lambda name, vals, on: "".join(  # noqa: E731
         f'<label><input type="checkbox" name="{name}" value="{v}"{" checked" if v in on else ""}>{v}</label>' for v in vals)
     form = f"""<section><h2>Jalankan batch</h2>
-<form method="post" action="/start" onsubmit="const n=this.querySelectorAll('[name=level]:checked').length*this.querySelectorAll('[name=tc]:checked').length*this.reps.value;return confirm('Jalankan '+n+' run (±3,5 menit per run, ±'+Math.round(n*3.5/60*10)/10+' jam)?')">
+<form method="post" action="/start" onsubmit="const n=this.querySelectorAll('[name=level]:checked').length*this.querySelectorAll('[name=tc]:checked').length*this.reps.value;return confirm('Jalankan '+n+' run (±2,7 menit per run, ±'+Math.round(n*2.7/60*10)/10+' jam)?')">
 <div class="row"><label>Nama batch <input name="batch" required pattern="[A-Za-z0-9_\\-]{{1,40}}" title="huruf, angka, - dan _" placeholder="qwen-uji"></label>
 <label>Model <select name="model">{''.join(f'<option value="{m}">{model_name(m)}</option>' for m in MODELS)}</select></label></div>
 <div class="row">Level: {chk('level', LEVELS, LEVELS)}</div>

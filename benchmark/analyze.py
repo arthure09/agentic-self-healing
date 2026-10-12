@@ -167,7 +167,8 @@ def med_range(vals) -> str:
     v = [x for x in vals if isinstance(x, (int, float))]
     if not v:
         return "–"
-    return f"{num(statistics.median(v))} ({num(min(v))}–{num(max(v))})"
+    d = 0 if all(isinstance(x, int) for x in v) and statistics.median(v) == int(statistics.median(v)) else 1
+    return f"{num(statistics.median(v), d)} ({num(min(v), d)}–{num(max(v), d)})"
 
 
 def summarize(rows: list[dict]) -> dict:

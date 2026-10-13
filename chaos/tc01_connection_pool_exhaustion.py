@@ -5,7 +5,8 @@ Membuka 45 koneksi simultan ke PostgreSQL (max_connections=50) lalu menahannya
 dalam keadaan idle sampai --hold detik habis, SIGTERM/SIGINT diterima, atau
 koneksi diputus dari sisi server (mis. agent memanggil pg_terminate_backend).
 
-Semua koneksi memakai application_name=chaos_tc01 agar mudah diidentifikasi.
+Semua koneksi memakai application_name dari chaos/names.json (nama netral,
+agar agent menemukan penyebab dari pola data, bukan dari namanya).
 Koneksi yang ditolak karena slot habis ("too many clients") dicatat sebagai
 bagian dari hasil, bukan error script.
 """
@@ -16,10 +17,10 @@ import time
 
 import psycopg
 
-from common import load_env, log_event, new_run_id, pg_dsn, write_pidfile
+from common import NAMES, load_env, log_event, new_run_id, pg_dsn, write_pidfile
 
 SCENARIO = "tc01"
-APP_NAME = "chaos_tc01"
+APP_NAME = NAMES["tc01"]["application_name"]
 
 
 def main():

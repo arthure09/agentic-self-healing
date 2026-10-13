@@ -7,7 +7,8 @@ Dua transaksi paralel mengunci dua baris yang sama dengan urutan terbalik:
 PostgreSQL mendeteksi siklus setelah deadlock_timeout (1 s), membatalkan salah
 satu transaksi, dan menaikkan counter pg_stat_database.deadlocks.
 
-Tabel uji ada di skema terpisah `chaos` agar tidak menyentuh tabel Medusa.
+Tabel uji ada di skema terpisah (nama dari chaos/names.json) agar tidak
+menyentuh tabel Medusa.
 """
 import argparse
 import threading
@@ -15,14 +16,16 @@ import time
 
 import psycopg
 
-from common import load_env, log_event, new_run_id, pg_dsn
+from common import NAMES, load_env, log_event, new_run_id, pg_dsn
 
 SCENARIO = "tc02"
-APP_NAME = "chaos_tc02"
-SETUP_SQL = """
-CREATE SCHEMA IF NOT EXISTS chaos;
-CREATE TABLE IF NOT EXISTS chaos.deadlock_demo (id int PRIMARY KEY, balance int NOT NULL);
-INSERT INTO chaos.deadlock_demo VALUES (1, 1000), (2, 1000)
+APP_NAME = NAMES["tc02"]["application_name"]
+SCHEMA = NAMES["tc02"]["schema"]
+TABLE = f'{SCHEMA}.{NAMES["tc02"]["table"]}'
+SETUP_SQL = f"""
+CREATE SCHEMA IF NOT EXISTS {SCHEMA};
+CREATE TABLE IF NOT EXISTS {TABLE} (id int PRIMARY KEY, balance int NOT NULL);
+INSERT INTO {TABLE} VALUES (1, 1000), (2, 1000)
   ON CONFLICT (id) DO UPDATE SET balance = EXCLUDED.balance;
 """
 
@@ -40,9 +43,9 @@ def one_round(dsn: str) -> dict:
     def tx(name, first, second):
         with psycopg.connect(dsn) as c:
             try:
-                c.execute("UPDATE chaos.deadlock_demo SET balance = balance - 1 WHERE id = %s", (first,))
+                c.execute(f"UPDATE {TABLE} SET balance = balance - 1 WHERE id = %s", (first,))
                 barrier.wait(timeout=10)
-                c.execute("UPDATE chaos.deadlock_demo SET balance = balance + 1 WHERE id = %s", (second,))
+                c.execute(f"UPDATE {TABLE} SET balance = balance + 1 WHERE id = %s", (second,))
                 c.commit()
                 outcome[name] = "committed"
             except psycopg.errors.DeadlockDetected:

@@ -47,6 +47,7 @@ CHAOS = {"tc01": "tc01_connection_pool_exhaustion.py", "tc02": "tc02_deadlock_si
          "tc03": "tc03_redis_memory_flood.py", "tc04": "tc04_container_kill.py"}
 STABILIZE_S, ALERT_TIMEOUT_S, AGENT_TIMEOUT_S, POLL_S = 60, 600, 300, 2
 CONTAINERS = ["medusa-app", "medusa-postgres", "medusa-redis"]
+NAMES = json.loads((ROOT / "chaos" / "names.json").read_text())["current"]  # disimpan per run untuk analyze.py
 SNAPSHOT_QUERIES = {
     "pg_conn_ratio": "sum(pg_stat_activity_count) / scalar(pg_settings_max_connections)",
     "redis_mem_ratio": "redis_memory_used_bytes / redis_memory_max_bytes",
@@ -236,7 +237,7 @@ def one_run(key: str, spec: dict, model: str, out: Path) -> None:
     events = [e for e in jsonl(RUNS / "events.jsonl") if e.get("run_id") == run_id]
     result = {
         "key": key, "run_id": run_id, **spec, "model": model, "model_ref": MODELS[model],
-        "started_ms": started, "inject_ms": inject, "git": git_state(),
+        "started_ms": started, "inject_ms": inject, "git": git_state(), "cause_names": NAMES.get(tc, {}),
         "run_config": next((e for e in events if e.get("event") == "run_config"), {}),
         "prom_first_alert_ms": fired_ms, "prom_clear_ms": clear_ms,
         "agent_done_ms": agent_done_ms, "agent_timeout": not done,

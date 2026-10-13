@@ -5,8 +5,10 @@
 #      model agent, fallback, thinkingDefault, params, versi OpenClaw)
 #   1. hentikan chaos script yang masih berjalan (pidfile)
 #   2. putus koneksi chaos di PostgreSQL, bersihkan tabel uji TC-02
-#   3. restart PostgreSQL, Redis (tanpa persistensi -> kosong), lalu Medusa
-#      (entrypoint Medusa men-seed ulang bila katalog kosong)
+#   3. buat ulang container PostgreSQL, Redis (tanpa persistensi -> kosong), lalu
+#      Medusa (entrypoint men-seed ulang bila katalog kosong). Dibuat ulang, bukan
+#      di-restart, agar log run sebelumnya (deadlock, OOM, error koneksi) tidak
+#      terbaca agent lewat container-logs. Data PostgreSQL tetap di volume pgdata.
 #   4. tunggu semua container healthy, metrik kembali ke baseline, dan tidak
 #      ada alert yang firing/pending
 # Setiap reset dicatat ke benchmark/runs/events.jsonl (scenario "reset").
@@ -22,6 +24,8 @@ TIMEOUT="${RESET_TIMEOUT:-300}"
 RUN_ID="${RUN_ID:-reset-$(date -u +%Y%m%dT%H%M%SZ)}"
 PROM="http://127.0.0.1:9090"
 AM="http://127.0.0.1:9093"
+NAMES="chaos/names.json"  # nama penyebab gangguan (application_name, skema, key)
+names() { jq -r ".current.$1" "$NAMES"; }
 
 mkdir -p "$(dirname "$EVENTS")"
 now_ms() { date +%s%3N; }
@@ -99,24 +103,24 @@ log "chaos dihentikan: ${killed[*]:-(tidak ada)}"
 # 2. Pastikan Layer 1 berjalan (setelah TC-04 container bisa dalam kondisi exited)
 docker compose up -d postgres redis >/dev/null 2>&1
 wait_until "postgres healthy" healthy medusa-postgres
-psql_q "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE application_name LIKE 'chaos_%'" >/dev/null
-psql_q "DROP SCHEMA IF EXISTS chaos CASCADE" >/dev/null
+psql_q "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE application_name IN ('$(names tc01.application_name)', '$(names tc02.application_name)')" >/dev/null
+psql_q "DROP SCHEMA IF EXISTS $(names tc02.schema) CASCADE" >/dev/null
 
-# 3. Restart berurutan: Medusa berhenti dulu agar tidak menulis ke Redis/DB
-log "restart postgres, redis, medusa..."
+# 3. Buat ulang berurutan: Medusa berhenti dulu agar tidak menulis ke Redis/DB
+log "buat ulang postgres, redis, medusa..."
 docker compose stop medusa >/dev/null 2>&1
-docker compose restart postgres redis >/dev/null 2>&1
+docker compose up -d --force-recreate --no-deps postgres redis >/dev/null 2>&1
 wait_until "postgres healthy" healthy medusa-postgres
 wait_until "redis healthy" healthy medusa-redis
-docker compose start medusa >/dev/null 2>&1
+docker compose up -d --force-recreate --no-deps medusa >/dev/null 2>&1
 wait_until "medusa healthy" healthy medusa-app
 
 # 4. Verifikasi kondisi awal
 products="$(psql_q 'SELECT count(*) FROM product WHERE deleted_at IS NULL')"
 orders="$(psql_q 'SELECT count(*) FROM "order"')"
 [[ "$products" -eq 40 ]] || { log "katalog tidak sesuai seed ($products produk)"; exit 1; }
-chaos_keys="$(docker exec medusa-redis redis-cli --scan --pattern 'queue:chaos:*' | wc -l)"
-[[ "$chaos_keys" -eq 0 ]] || { log "masih ada $chaos_keys key chaos di Redis"; exit 1; }
+chaos_keys="$(docker exec medusa-redis redis-cli exists "$(names tc03.key)")"
+[[ "$chaos_keys" -eq 0 ]] || { log "key antrean TC-03 masih ada di Redis"; exit 1; }
 
 wait_until "exporter postgres & redis up" \
   prom_eq 'min(up{job=~"postgres|redis"}) * min(pg_up) * min(redis_up)' 1

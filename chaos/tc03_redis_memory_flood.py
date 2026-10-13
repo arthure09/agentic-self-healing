@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """TC-03 — Redis memory flooding.
 
-Memasukkan 10.000 task palsu ke antrean Redis (list `queue:chaos:tasks`)
+Memasukkan 10.000 task palsu ke antrean Redis (list, nama dari chaos/names.json)
 sampai pemakaian memori melewati 85% dari maxmemory (256 MB).
 
 Setiap task berukuran tepat --item-bytes (default 24.400 byte JSON). Nilai
@@ -19,10 +19,11 @@ import uuid
 
 import redis
 
-from common import log_event, new_run_id, now_ms, redis_url
+from common import NAMES, log_event, new_run_id, now_ms, redis_url
 
 SCENARIO = "tc03"
-QUEUE_KEY = "queue:chaos:tasks"
+QUEUE_KEY = NAMES["tc03"]["key"]
+TASK_TYPE = NAMES["tc03"]["task_type"]
 
 
 def memory_pct(r) -> tuple[int, int, float]:
@@ -45,7 +46,7 @@ def main():
     filler = os.urandom(args.item_bytes // 2 + 1).hex()
 
     def task(seq: int) -> str:
-        head = {"id": str(uuid.uuid4()), "type": "chaos.fake_task",
+        head = {"id": str(uuid.uuid4()), "type": TASK_TYPE,
                 "seq": seq, "created_ms": now_ms(), "payload": ""}
         pad = args.item_bytes - len(json.dumps(head))
         head["payload"] = filler[:max(pad, 0)]

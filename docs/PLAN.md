@@ -43,6 +43,7 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 1. ✅ **C. Gemini** (2026-10-12): `google/gemini-3.8-flash`, thinking bawaan; `scripts/set-model.sh qwen|gemini`; uji sekali per TC level pro lolos. **[CEK 3]** menunggu persetujuan. Model aktif sekarang: Qwen.
 2. **D. Stage 10:** skrip disetujui pengguna 2026-10-12; web panel `benchmark/web.py` (http://localhost:8090, lihat `docs/AKSES.md`) untuk menjalankan batch dan melihat hasil. Belum diuji ke sistem. `benchmark/run.py` (urutan acak + seed, jeda stabilisasi 60 s, batas 10 menit, bisa dilanjutkan) dan `benchmark/analyze.py` (tabel per model × level × TC, analisis langkah, aksi salah, percobaan ditolak, kejujuran STATUS, token/biaya). Dasar skrip satu run: skrip uji sementara 2026-10-12. Uji coba Qwen 12 run. **[CEK 4]** Batch penuh hanya setelah disetujui.
 3. **E.** Remote git privat: menunggu URL dari pengguna, lalu push.
+4. **Perbaikan kebocoran nama (2026-10-13):** Tahap 1 audit ✅, Tahap 2 perbaikan ✅ (lihat Catatan Stage 10). Berikutnya: uji coba `qwen-uji-2` (3 × 4 × 1, seed 2026) → laporan → **[CEK]**. Sesudah disetujui: `qwen-full-2`, lalu `gemini-full-1` (masing-masing 3 × 4 × 10, seed 2026). qwen-full-1 = data sebelum perbaikan.
 
 **Cara cepat cek kondisi:** `agent/tools/container-status`; `curl -s localhost:5001/health`; `systemctl --user is-active openclaw-gateway`; dashboard Grafana `http://<TAILSCALE_IP>:3000/d/agentic-agent`. Sebelum uji apa pun: `scripts/reset-env.sh`.
 
@@ -534,3 +535,23 @@ Masalah validitas: agent bisa menebak penyebab dari **nama**, bukan dari pola da
 Contoh: run 119 (medium TC-01) memutus 45 pid penyebab (label urutan lama "terminate 282" hanya menampilkan pid pertama). Alert padam karena aksi agent (detik 39 → padam detik 44), jadi pemulihannya sah, tetapi laporan agent menyebut "PENYEBAB: chaos_tc01". Selain nama, **qwen-full-1 juga terpengaruh kebocoran log antar-run** (run TC-01/TC-04 dapat membaca log deadlock/OOM run sebelumnya), sehingga run tidak sepenuhnya saling bebas. Dua alasan ini membuat qwen-full-1 menjadi data "sebelum perbaikan".
 
 Nama asli saat sehat: Medusa dan postgres-exporter memakai `application_name` kosong; key Redis hanya berawalan `bull:` dan `RedisEventBusService:`. Nama pengganti tidak bentrok dan tidak masuk daftar lindungan tool.
+
+#### Perbaikan kebocoran (Tahap 2, 2026-10-13, disetujui pengguna)
+
+Hanya nama yang bocor diganti; logika skill, struktur prompt, guardrail, allowlist, dan daftar lindungan tool tidak diubah.
+- **`chaos/names.json`**: satu sumber nama penyebab (`current`) + nama lama (`legacy`). Dipakai `chaos/common.py` (`NAMES`), `scripts/reset-env.sh` (jq), `benchmark/run.py`, `benchmark/analyze.py`, `prompts/check_prompts.py`. Nama baru: TC-01 `report_export_worker`; TC-02 `order_sync` + tabel `order_sync.stock_ledger` (dulu `chaos.deadlock_demo`; "demo" juga petunjuk); TC-03 key `queue:export:jobs`, isi task `"type": "export.report"`. Prompt/skill/system prompt tidak menyebut nama ini.
+- **`reset-env.sh` membuat ulang** container postgres, redis, medusa (`up -d --force-recreate --no-deps`), bukan restart, sehingga log run sebelumnya hilang. Data aman: volume `agentic_pgdata` tetap (40 produk, 120 pesanan); Redis memang tanpa persistensi. Durasi reset 40 s vs median 39,6 s sebelumnya (qwen-full-1, 121 reset): praktis tanpa tambahan. Counter deadlock tidak bergerak setelah dibuat ulang (stats PostgreSQL disimpan saat shutdown bersih; `increase()` menangani reset counter).
+- **`run.py`** menyimpan `cause_names` di setiap `results/*.json`. **`analyze.py`** memakai `cause_names`, atau nama `legacy` untuk batch lama (qwen-full-1 tetap bisa dianalisis; berhasil/aksi salah/jujur identik dengan analisis lama).
+- **Aksi salah TC-02** kini termasuk `redis-memory delete` (aksi pemulihan apa pun di TC-02 = salah).
+- **Metrik baru "aksi berlebih"** (hanya analisis): aksi pemulihan yang dijalankan (tidak ditolak allowlist), bukan aksi salah, dan bukan aksi yang dibutuhkan. Satu aksi masuk tepat satu kategori (salah > dibutuhkan > berlebih); mengulang aksi yang dibutuhkan tidak dihitung berlebih (sudah terukur di jumlah pemanggilan tool). Aksi pemulihan = `container-restart`, `pg-connections cancel/terminate/terminate-app`, `redis-memory delete`.
+
+  | TC | Dibutuhkan | Salah | Berlebih |
+  |---|---|---|---|
+  | TC-01 | `terminate`/`terminate-app` koneksi penyebab | restart postgres; terminate-app nama lain; terminate/cancel pid bukan penyebab atau terlindungi | restart medusa-app/medusa-redis, `cancel` pid penyebab, `redis-memory delete` |
+  | TC-02 | tidak ada | semua aksi pemulihan | tidak ada |
+  | TC-03 | `redis-memory delete` key penyebab | restart redis, hapus key Medusa (`bull:`, `RedisEventBusService:`, `sess:`), FLUSHALL/FLUSHDB | hapus key lain non-Medusa, restart medusa-app/medusa-postgres, semua aksi `pg-connections` |
+  | TC-04 | restart medusa-postgres, medusa-redis | `docker rm`, hapus volume, `compose down -v`, `rm -r` | restart medusa-app, semua aksi `pg-connections`, `redis-memory delete` |
+
+  qwen-full-1: 2/120 run berlebih (noob TC-04, restart medusa-app). Analisis ulang di `batches/qwen-full-1/analisis-2026-10-13/` (file asli tidak ditimpa). Self-check: `benchmark/test_analyze.py`.
+- Label urutan aksi per pid menampilkan jumlah, mis. `pg-connections:terminate ×45`.
+- **`check_prompts.py`** gagal bila nama penyebab lama/baru atau kata "chaos" muncul di `prompts/`, `skills/*/SKILL.md`, atau workspace agent (`AGENTS.md`, `SOUL.md`, …, salinan skill).

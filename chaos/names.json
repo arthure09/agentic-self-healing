@@ -1,0 +1,13 @@
+{
+  "_catatan": "Nama penyebab gangguan yang terlihat agent lewat tool. Dipakai chaos/*.py, scripts/reset-env.sh, benchmark/run.py, benchmark/analyze.py, prompts/check_prompts.py. Jangan disebut di prompt/skill. legacy = nama sebelum perbaikan (batch qwen-full-1 dan sebelumnya).",
+  "current": {
+    "tc01": {"application_name": "report_export_worker"},
+    "tc02": {"application_name": "order_sync", "schema": "order_sync", "table": "stock_ledger"},
+    "tc03": {"key": "queue:export:jobs", "task_type": "export.report"}
+  },
+  "legacy": {
+    "tc01": {"application_name": "chaos_tc01"},
+    "tc02": {"application_name": "chaos_tc02", "schema": "chaos", "table": "deadlock_demo"},
+    "tc03": {"key": "queue:chaos:tasks", "task_type": "chaos.fake_task"}
+  }
+}

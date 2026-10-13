@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parent.parent
 RUNS_DIR = ROOT / "benchmark" / "runs"
 EVENTS_FILE = RUNS_DIR / "events.jsonl"
 PID_DIR = RUNS_DIR / "pids"
+# Nama penyebab yang terlihat agent (application_name, key, skema): satu sumber.
+NAMES = json.loads((ROOT / "chaos" / "names.json").read_text())["current"]
 
 
 def load_env(path: Path = ROOT / ".env") -> dict:

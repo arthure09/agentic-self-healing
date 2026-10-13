@@ -22,7 +22,7 @@ Dicatat per stage di server `merapi`. Detail perangkat keras, jaringan, dan fire
 |---|---|---|---|
 | PostgreSQL | `postgres:16.15-alpine3.24` (16.15) | `max_connections=50`, `shared_buffers=128MB`, `log_lock_waits=on`, `deadlock_timeout=1s`. Port `127.0.0.1:5432` | Stage 2, 2026-09-29 |
 | Redis | `redis:7.4.11-alpine3.21` (7.4.11) | `maxmemory 256mb`, `maxmemory-policy noeviction`, tanpa persistensi. Port `127.0.0.1:6379` | Stage 2, 2026-09-29 |
-| MedusaJS | 2.20.1 (backend + admin dashboard), image lokal `agentic/medusa:2.20.1` | Event bus, workflow engine, dan locking memakai Redis. Port `100.97.181.49:9000` (admin di `/app`) | Stage 2, 2026-09-29 |
+| MedusaJS | 2.20.1 (backend + admin dashboard), image lokal `agentic/medusa:2.20.1` | Event bus, workflow engine, dan locking memakai Redis. Port `<TAILSCALE_IP>:9000` (admin di `/app`) | Stage 2, 2026-09-29 |
 | Node.js (dalam image Medusa) | `node:22.23.3-alpine3.24` (v22.23.3), npm 10.9.9 | Dependensi dikunci dengan `app/medusa/package-lock.json` | Stage 2, 2026-09-29 |
 
 **Data seed** (`app/medusa/src/scripts/seed.ts`, deterministik dengan PRNG ber-seed tetap):
@@ -42,7 +42,7 @@ region Indonesia (IDR), 1 gudang (stok 1.000 per varian), 2 opsi pengiriman, 5 k
 | Alertmanager | `prom/alertmanager:v0.34.1` | `127.0.0.1:9093` | Stage 3, 2026-09-29 |
 | Loki | `grafana/loki:3.7.8` (TSDB schema v13, filesystem, retensi 7 hari) | `127.0.0.1:3100` | Stage 3, 2026-09-29 |
 | Promtail | `grafana/promtail:3.6.11` (Docker service discovery, refresh 5 s) | internal | Stage 3, 2026-09-29 |
-| Grafana | `grafana/grafana:13.2.3` | `100.97.181.49:3000` (login wajib, anonim nonaktif) | Stage 3, 2026-09-29 |
+| Grafana | `grafana/grafana:13.2.3` | `<TAILSCALE_IP>:3000` (login wajib, anonim nonaktif) | Stage 3, 2026-09-29 |
 
 **Target scrape Prometheus (9):** prometheus, alertmanager, postgres, redis, cadvisor, node, loki, promtail, grafana.
 
@@ -50,7 +50,7 @@ region Indonesia (IDR), 1 gudang (stok 1.000 per varian), 2 opsi pengiriman, 5 k
 
 **Label log Loki:** `container`, `service` (nama service compose), `project`, `stream`.
 
-**Akses UI internal** (Prometheus/Alertmanager hanya di localhost): lewat tunnel SSH, mis. `ssh -L 9090:127.0.0.1:9090 -L 9093:127.0.0.1:9093 areph09@100.97.181.49`, atau lewat Grafana Explore.
+**Akses UI internal** (Prometheus/Alertmanager hanya di localhost): lewat tunnel SSH, mis. `ssh -L 9090:127.0.0.1:9090 -L 9093:127.0.0.1:9093 areph09@<TAILSCALE_IP>`, atau lewat Grafana Explore.
 
 ## Chaos tooling (Stage 5)
 

@@ -44,7 +44,7 @@ Alur kerja: di akhir setiap stage, jalankan verifikasi stage tersebut, commit, p
 2. **D. Stage 10:** skrip disetujui pengguna 2026-10-12; web panel `benchmark/web.py` (http://localhost:8090, lihat `docs/AKSES.md`) untuk menjalankan batch dan melihat hasil. Belum diuji ke sistem. `benchmark/run.py` (urutan acak + seed, jeda stabilisasi 60 s, batas 10 menit, bisa dilanjutkan) dan `benchmark/analyze.py` (tabel per model × level × TC, analisis langkah, aksi salah, percobaan ditolak, kejujuran STATUS, token/biaya). Dasar skrip satu run: skrip uji sementara 2026-10-12. Uji coba Qwen 12 run. **[CEK 4]** Batch penuh hanya setelah disetujui.
 3. **E.** Remote git privat: menunggu URL dari pengguna, lalu push.
 
-**Cara cepat cek kondisi:** `agent/tools/container-status`; `curl -s localhost:5001/health`; `systemctl --user is-active openclaw-gateway`; dashboard Grafana `http://100.97.181.49:3000/d/agentic-agent`. Sebelum uji apa pun: `scripts/reset-env.sh`.
+**Cara cepat cek kondisi:** `agent/tools/container-status`; `curl -s localhost:5001/health`; `systemctl --user is-active openclaw-gateway`; dashboard Grafana `http://<TAILSCALE_IP>:3000/d/agentic-agent`. Sebelum uji apa pun: `scripts/reset-env.sh`.
 
 **Ingat:** `~/.openclaw/workspace-merapi/AGENTS.md` adalah salinan `prompts/system/pro.md`; salin ulang bila diubah. Skill agent dibaca dari salinan di `~/.openclaw/workspace-merapi/skills/`: jalankan `scripts/sync-skills.sh` setiap kali `skills/*/SKILL.md` diubah (guardrail 2026-10-07, lihat Catatan Stage 9). Ganti level prompt: ubah `PROMPT_LEVEL` di `.env`, lalu `docker compose up -d alert-bridge`.
 
@@ -209,8 +209,8 @@ Urutan sesuai rencana bimbingan 2026-09-18: satu tool dulu, baru skill lengkap.
 - **Catatan untuk TC-01:** baseline idle sudah 12/50 koneksi, jadi 45 koneksi chaos akan menghabiskan pool (12 + 45 > 50). Script TC-01 perlu menangani koneksi yang ditolak (`too many clients`) sebagai hasil yang diharapkan.
 - Verifikasi:
   - 3 container `healthy`.
-  - `GET http://100.97.181.49:9000/app` → 200, login admin lewat API berhasil, `/admin/products` = 40 dan `/admin/orders` = 120.
-  - `ss -tulpn`: `127.0.0.1:5432`, `127.0.0.1:6379`, `100.97.181.49:9000`. Port 9000 tidak terjangkau dari IP LAN.
+  - `GET http://<TAILSCALE_IP>:9000/app` → 200, login admin lewat API berhasil, `/admin/products` = 40 dan `/admin/orders` = 120.
+  - `ss -tulpn`: `127.0.0.1:5432`, `127.0.0.1:6379`, `<TAILSCALE_IP>:9000`. Port 9000 tidak terjangkau dari IP LAN.
   - Restart container: migrasi dan seed dilewati, `restarts=0`.
 
 ### Stage 3
@@ -337,7 +337,7 @@ Dikerjakan lebih dulu daripada Stage 4 atas permintaan. Verifikasi "alert firing
 - `.env`: `OPENCLAW_HOOK_URL=http://172.18.0.1:18789/hooks/agent`. alert-bridge dibuat ulang agar membaca URL dan `OPENCLAW_AGENT_ID=merapi`.
 - **Perbaikan biaya:** alert-bridge mengirim `deliver: true`. Akibatnya hasil setiap run diteruskan ke sesi `main`, yang lalu menjalankan satu putaran lagi (+14 ribu token) dengan model sesi itu, yaitu masih `openrouter/auto` dari wizard. Run TC-04 pertama menghabiskan $0,034. Diubah ke `deliver: false` (`alert-bridge/app.py`), image dinaikkan ke `agentic/alert-bridge:1.0.1`. Run kedua: $0,018 dan sesi `main` tidak tersentuh.
 - Verifikasi:
-  - `ss`: 18789 hanya di `127.0.0.1` dan `172.18.0.1`, tidak di IP LAN `10.28.14.176` maupun Tailscale `100.97.181.49`.
+  - `ss`: 18789 hanya di `127.0.0.1` dan `172.18.0.1`, tidak di IP LAN `<IP LAN>` maupun Tailscale `<TAILSCALE_IP>`.
   - Dari dalam container alert-bridge: `GET http://172.18.0.1:18789/` → `HTTP 200` (sebelumnya timeout).
   - TC-04 (2 run): `RedisDown` dan `PostgresDown` → `forward_ok`, `http_status` 200, percobaan pertama, ±0,2–0,8 s dari diterima sampai respons Gateway. OpenClaw membuat satu run per alert (model `qwen/qwen3.7-plus`, status `ok`).
   - Guardrail sementara bekerja: agent mencoba exec 8 kali (run 1) dan 7 kali (run 2), **semuanya ditolak** (`exec denied: security=deny`). Container tidak dihidupkan agent; yang menghidupkan adalah `reset-env.sh`.

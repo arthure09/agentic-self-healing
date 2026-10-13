@@ -39,11 +39,11 @@ Dicatat 2026-09-29 saat fondasi server disiapkan (sebelum stack aplikasi dideplo
 
 | Interface | Alamat |
 |---|---|
-| `enp2s0` (LAN) | 10.28.14.176/24 |
-| `tailscale0` | 100.97.181.49 (hostname Tailscale `merapi`) |
+| `enp2s0` (LAN) | <IP LAN>/24 |
+| `tailscale0` | <TAILSCALE_IP> (hostname Tailscale `merapi`) |
 | `docker0` | 172.17.0.1/16 |
 
-### Tes jaringan ke PC RTX 5090 (10.28.14.200, LAN)
+### Tes jaringan ke PC RTX 5090 (<IP LAN PC GPU>, LAN)
 
 | Metrik | Hasil |
 |---|---|
@@ -63,7 +63,7 @@ Status: aktif dan enabled. Logging `low`. Kebijakan default: **deny** masuk, **a
 
 Artinya dari LAN hanya SSH yang terbuka. Semua layanan lain hanya bisa diakses lewat Tailscale, kecuali port yang dipublikasikan Docker (lihat catatan di bawah).
 
-> **Catatan penting:** port yang dipublikasikan Docker (`ports: "5432:5432"` dan sejenisnya) **tidak difilter oleh ufw**. Docker menulis aturan iptables sendiri (rantai `DOCKER`) yang diproses sebelum aturan ufw. Untuk membatasi port layanan hanya ke Tailscale atau localhost, bind port secara eksplisit di compose (mis. `"127.0.0.1:5432:5432"` atau `"100.97.181.49:9090:9090"`), bukan lewat ufw.
+> **Catatan penting:** port yang dipublikasikan Docker (`ports: "5432:5432"` dan sejenisnya) **tidak difilter oleh ufw**. Docker menulis aturan iptables sendiri (rantai `DOCKER`) yang diproses sebelum aturan ufw. Untuk membatasi port layanan hanya ke Tailscale atau localhost, bind port secara eksplisit di compose (mis. `"127.0.0.1:5432:5432"` atau `"<TAILSCALE_IP>:9090:9090"`), bukan lewat ufw.
 
 ## 5. Referensi dari server lama (`tandikat`)
 
@@ -84,8 +84,8 @@ Sumber: `~/migration-backup/MIGRATION.md` dan `project.tar.gz`, yang diekstrak r
 | `postgres/init.sql` | Ekstensi `uuid-ossp`, `pg_trgm`, view `v_connection_usage` | Siap pakai |
 | `loki/`, `promtail/` | Loki TSDB v13 retensi 7 hari, Promtail via Docker SD | Promtail sudah deprecated oleh Grafana (penggantinya Grafana Alloy). Pertimbangkan migrasi |
 | `docker-compose.yml` | 12 service (Layer 1 dan Layer 2 serta alert-bridge) | Secret di-hardcode: `POSTGRES_PASSWORD`, `DATABASE_URL`, `DATA_SOURCE_NAME`, `OPENCLAW_HOOK_TOKEN`, `GF_SECURITY_ADMIN_PASSWORD` (masih default). Semua port bind 0.0.0.0 (lihat catatan ufw). 8 image bertag `:latest` (pin ke digest di MIGRATION.md). `GF_AUTH_ANONYMOUS_ENABLED=true`. `version: "3.9"` sudah usang |
-| `medusa/` | Dockerfile (node:20-alpine), `medusa-config.ts`, `.env.template` | `.env` asli (di `secrets.tar.gz`) berisi `ADMIN_CORS`/`AUTH_CORS` dengan IP lama 100.93.122.112 → ganti ke 100.97.181.49 |
-| `README.md` | Panduan deploy | Masih menyebut `tandikat`/100.93.122.112, dan ada salah ketik 100.93.122.190 |
+| `medusa/` | Dockerfile (node:20-alpine), `medusa-config.ts`, `.env.template` | `.env` asli (di `secrets.tar.gz`) berisi `ADMIN_CORS`/`AUTH_CORS` dengan IP lama <IP Tailscale lama> → ganti ke <TAILSCALE_IP> |
+| `README.md` | Panduan deploy | Masih menyebut `tandikat`/<IP Tailscale lama>, dan ada salah ketik pada IP itu |
 
 Data yang bisa di-restore: `data-medusa_db.sql.gz` (dump `medusa_db`) dan `data-grafana.db.gz` (dashboard dan datasource Grafana). Metrik Prometheus historis (3.3 GB) tidak di-backup.
 

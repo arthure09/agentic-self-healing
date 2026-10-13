@@ -514,3 +514,23 @@ Agent uji lalu dihapus (`openclaw agents delete --force`), allowlist-nya dibuang
 - **Perkiraan batch penuh** (120 run/model, dari uji coba ini): ±161 s × 120 ≈ **5,4 jam per model**; biaya Qwen ±$0,86. Gemini: ±$3,3 bila setara level pro 2026-10-12 ($0,027/run), durasi belum diukur.
 - Perbaikan kecil setelah uji: angka bulat tanpa ",0" di tabel; perkiraan waktu di web memakai 161 s/run.
 
+
+**Batch penuh `qwen-full-1`** (dijalankan pengguna dari web 2026-10-12/13; Qwen, 3 × 4 × 10, seed 2026; tabel di `benchmark/runs/batches/qwen-full-1/analysis.md`): 120/120 berhasil, 0 aksi salah, 120/120 jujur, biaya ±$0,94. **Status: data "sebelum perbaikan"**, tidak dipakai sebagai hasil utama (lihat audit di bawah). Data tidak dihapus atau ditimpa.
+
+#### Audit kebocoran nama penyebab (Tahap 1, 2026-10-13)
+
+Masalah validitas: agent bisa menebak penyebab dari **nama**, bukan dari pola data. Teks yang dibaca agent (system prompt, 4 skill, 12 prompt, alert rules, template alert-bridge) bersih dari kata "chaos". Kebocoran ada di data yang ditampilkan tool saat gangguan (diuji dengan menyuntik TC-01..04 manual; alert dibisukan di Alertmanager selama uji supaya agent tidak terpicu):
+
+| Lokasi | Yang dilihat agent |
+|---|---|
+| `pg-connections` (TC-01) | grup `application_name=chaos_tc01`, 45 koneksi idle |
+| `pg-connections` (TC-02) | `chaos_tc02` dan query `UPDATE chaos.deadlock_demo ...` |
+| `container-logs medusa-postgres` (TC-02) | log deadlock mencetak `chaos.deadlock_demo` (`log_line_prefix` = `%m [%p]`, nama aplikasi tidak tercetak) |
+| `container-logs medusa-postgres` (TC-01, TC-04) | log deadlock dari **run sebelumnya**: log container bertahan setelah `docker compose restart` |
+| `container-logs medusa-app` | jejak run sebelumnya: error OOM Redis (TC-03), ribuan error koneksi Redis (TC-04/reset) |
+| `redis-memory` (TC-03) | key terbesar `queue:chaos:tasks` |
+| `container-status` | bersih (chaos berjalan di host) |
+
+Contoh: run 119 (medium TC-01) memutus 45 pid penyebab (label urutan lama "terminate 282" hanya menampilkan pid pertama). Alert padam karena aksi agent (detik 39 → padam detik 44), jadi pemulihannya sah, tetapi laporan agent menyebut "PENYEBAB: chaos_tc01". Selain nama, **qwen-full-1 juga terpengaruh kebocoran log antar-run** (run TC-01/TC-04 dapat membaca log deadlock/OOM run sebelumnya), sehingga run tidak sepenuhnya saling bebas. Dua alasan ini membuat qwen-full-1 menjadi data "sebelum perbaikan".
+
+Nama asli saat sehat: Medusa dan postgres-exporter memakai `application_name` kosong; key Redis hanya berawalan `bull:` dan `RedisEventBusService:`. Nama pengganti tidak bentrok dan tidak masuk daftar lindungan tool.

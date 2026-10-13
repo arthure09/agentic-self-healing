@@ -8,6 +8,8 @@
 # Output benchmark (data run mentah, bukan kode)
 benchmark/runs/*
 !benchmark/runs/.gitkeep
+# Data mentah OpenRouter (memuat ID akun); dokumen ringkasnya di docs/
+benchmark/openrouter/
 
 # Node / Medusa
 node_modules/

@@ -51,3 +51,18 @@ Dicek dari kode OpenClaw 2026.9.7 (`dist/`) dan dokumentasi `docs/providers/olla
 - Hanya fitur terpisah **node-inference** (`dist/node-inference-*.mjs`, perintah inferensi lewat node host, bukan giliran agent) yang membaca `load_duration` dan `total_duration` menjadi `timings: {loadMs, totalMs}`. Fitur ini pun tidak membaca `prompt_eval_duration` dan `eval_duration`.
 - Yang tetap tersedia di transkrip untuk Ollama: waktu mulai dan selesai setiap giliran (`message.timestamp` dan timestamp event), sehingga durasi ujung ke ujung per giliran bisa dihitung seperti untuk OpenRouter.
 - Artinya, TTFT dan kecepatan murni Ollama **tidak bisa** didapat dari transkrip OpenClaw. Perlu sumber lain, misalnya proxy pencatat antara OpenClaw dan Ollama, atau pemanggilan langsung ke Ollama di luar OpenClaw.
+
+## Gemini 3.8 Flash (2026-10-13 sore)
+
+Skrip yang sama: `--model google/gemini-3.8-flash --provider google-ai-studio` (penyedia dikunci, tanpa fallback). 10 permintaan `effort: low`, ditambah 3 permintaan `effort: high` sebagai pembanding. Data mentah: `benchmark/openrouter/validasi-latency-gemini-3.8-flash-*.jsonl`. Semua dilayani Google AI Studio.
+
+| Perbandingan (median, min–maks) | low (10) | high (3) |
+|---|---|---|
+| Chunk token pertama − `latency` | +375 ms (+352 sampai +1.563) | +368 ms (+355 sampai +437) |
+| Selesai − `generation_time` | +385 ms (+361 sampai +1.570) | +376 ms (+361 sampai +463) |
+| Token berpikir (`native_tokens_reasoning`) | 0–586; 9/10 permintaan 429–586 | 669–828 |
+| Chunk reasoning yang di-stream | 1–2 chunk (605–856 karakter); 1 permintaan tanpa reasoning | 3–4 chunk (1.092–1.557 karakter) |
+
+- **`latency` tetap cocok dengan waktu chunk pertama** dan `generation_time` dengan waktu selesai. Selisihnya ±0,37 s (lebih besar daripada Qwen ±0,16 s), tetap stabil. Satu nilai pencilan +1,56 s ada di permintaan pertama.
+- **Token berpikir Gemini ikut di-stream, tetapi berupa ringkasan, bukan token mentah.** Ringkasan datang dalam 1–4 potongan besar: ±450 token berpikir hanya menjadi ±700 karakter teks. Jadi "token pertama" Gemini adalah potongan ringkasan berpikir pertama, yang datang setelah model sudah berpikir sebagian. TTFT Gemini dan Qwen tidak sepenuhnya setara artinya: Qwen men-stream token berpikir mentah satu per satu.
+- `effort` berpengaruh: `high` menghasilkan lebih banyak token berpikir daripada `low`.

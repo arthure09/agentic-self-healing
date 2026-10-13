@@ -564,3 +564,12 @@ Qwen, 3 × 4 × 1, seed 2026, commit `93a6ecd`, dimulai lewat web 12:37–13:12.
 - Agent tetap bisa menghapus penyebab: `terminate-app report_export_worker` dan `redis-memory delete queue:export:jobs` berhasil, tidak ditolak lindungan tool.
 - Waktu deteksi mirip qwen-full-1: TC-01 10,8–15,4 s (dulu 10,9–15,7), TC-02 3,4–6,1 s (1,5–6,6), TC-03 11,9–12,6 s (10,7–15,5), TC-04 11,8–14,4 s (9,5–14,1). Alert deadlock tetap muncul setelah container postgres dibuat ulang; tidak ada alert dari skenario lain.
 - Reset (membuat ulang container): median 40,3 s (36,1–41,2), dulu 39,6 s.
+
+#### Metrik kecepatan model (2026-10-13, permintaan pengguna)
+
+- Pengecekan OpenRouter: `docs/cek-openrouter-2026-10-13.md` (dukungan temperature per penyedia, sebaran penyedia, temperature yang disarankan). Validasi arti kolom: `docs/validasi-latency-openrouter.md` (`scripts/validasi_latency_openrouter.py`, 10 permintaan): `latency` = TTFT di OpenRouter (selisih +160 ms dengan chunk pertama di merapi; token pertama = reasoning), `generation_time` = durasi total panggilan (+202 ms). Dokumentasi OpenRouter menyebut `latency` "total", data menunjukkan bukan.
+- **`benchmark/openrouter_gen.py BATCH`**: unduh `/api/v1/generation` untuk setiap gen-ID ke `batches/<batch>/generation.jsonl` (bisa dilanjutkan). `run.py` memanggilnya otomatis di akhir batch; bila gagal batch tetap selesai.
+- **`analyze.py`**: tabel baru "Kecepatan model" (juga tampil di web): panggilan model per run, TTFT (median `latency` per run), waktu model (jumlah `generation_time`), token/detik generasi (tanpa menunggu token pertama) dan total, penyedia. Kosong bila `generation.jsonl` belum ada.
+- Data generation sudah diunduh untuk qwen-uji-1 (66/66), qwen-full-1 (661/661), qwen-uji-2 (74/74); semua dilayani Alibaba. qwen-full-1: TTFT ±1,3–1,5 s, token/detik generasi ±42–55.
+- Ollama (DeepSeek lokal nanti): OpenClaw hanya menyimpan jumlah token ke transkrip, tidak menyimpan `*_duration`; TTFT Ollama perlu sumber lain.
+- Temperature belum diubah (masih bawaan penyedia). `benchmark/openrouter/` (data mentah, memuat ID akun OpenRouter) belum di-commit, menunggu keputusan pengguna.

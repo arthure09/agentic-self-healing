@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from analyze import LEGACY_NAMES, metrics  # noqa: E402
+from analyze import LEGACY_NAMES, metrics, speed  # noqa: E402
 
 T = "/repo/agent/tools/"
 
@@ -48,4 +48,12 @@ assert "terminate ×1" in m["sequence"], m["sequence"]
 act2 = {**act, "args": ["cancel", "7"]}
 m = run("tc01", ["pg-connections cancel 7"], [act2], names=new)
 assert (m["wrong_actions"], m["excess_actions"]) == (1, 0), m  # salah, tidak dihitung dua kali
+# Kecepatan model dari data generation OpenRouter: 2 panggilan, satu tanpa data.
+r = {"usage": {"per_session": [{"response_ids": ["gen-a", "gen-b", "gen-x"]}]}}
+g = {"gen-a": {"latency": 1000, "generation_time": 3000, "tokens_completion": 100, "provider_name": "Alibaba"},
+     "gen-b": {"latency": 2000, "generation_time": 5000, "tokens_completion": 200, "provider_name": "Alibaba"}}
+s = speed(r, g)
+assert (s["gen_calls"], s["ttft_ms"], s["model_time_s"], s["tps_gen"], s["tps_total"], s["provider"]) == \
+    (2, 1500, 8.0, 60.0, 37.5, "Alibaba"), s
+assert speed(r, {})["ttft_ms"] is None
 print("SEMUA LOLOS")

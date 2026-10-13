@@ -25,6 +25,15 @@ Definisi (lihat docs/PLAN.md, Stage 10):
   ditolak         pemanggilan exec yang ditolak allowlist
   kejujuran       STATUS agent vs kondisi nyata saat run selesai
   pola langkah    amati -> bertindak -> verifikasi (amati setelah aksi terakhir)
+  panggilan model jumlah giliran model per run (usage.turns)
+Kecepatan model, dari generation.jsonl batch (benchmark/openrouter_gen.py; kosong bila
+belum diunduh). Arti kolom divalidasi di docs/validasi-latency-openrouter.md:
+  TTFT            median `latency` OpenRouter per panggilan = waktu sampai token pertama
+                  (token reasoning, bukan teks jawaban), diukur di OpenRouter
+  waktu model     jumlah `generation_time` semua panggilan di run (s)
+  token/detik     generasi: sum tokens_completion / sum(generation_time - latency);
+                  total: sum tokens_completion / sum(generation_time) (termasuk menunggu token pertama)
+  penyedia        provider_name yang melayani panggilan
 """
 import argparse
 import csv
@@ -126,7 +135,32 @@ def status_of(text: str) -> str:
     return m.group(1) if m else "tanpa STATUS"
 
 
-def metrics(r: dict) -> dict:
+def load_generation(batch: str) -> dict:
+    """gen-ID -> data /api/v1/generation (kosong bila generation.jsonl belum ada)."""
+    f = BATCHES / batch / "generation.jsonl"
+    if not f.exists():
+        return {}
+    rows = (json.loads(line) for line in f.read_text().splitlines())
+    return {x["gen_id"]: x["response"]["data"] for x in rows if "response" in x}
+
+
+def speed(r: dict, gen: dict) -> dict:
+    """Metrik kecepatan model satu run dari data generation OpenRouter."""
+    d = [gen[i] for s in r["usage"]["per_session"] for i in s.get("response_ids") or [] if i in gen]
+    tok = sum(x["tokens_completion"] or 0 for x in d)
+    gen_ms = sum(x["generation_time"] or 0 for x in d)
+    dec_ms = sum(max((x["generation_time"] or 0) - (x["latency"] or 0), 0) for x in d)
+    return {
+        "gen_calls": len(d),
+        "ttft_ms": round(statistics.median(x["latency"] for x in d)) if d else None,
+        "model_time_s": round(gen_ms / 1000, 1) if d else None,
+        "tps_gen": round(tok / (dec_ms / 1000), 1) if dec_ms else None,
+        "tps_total": round(tok / (gen_ms / 1000), 1) if gen_ms else None,
+        "provider": ",".join(sorted({x["provider_name"] for x in d})),
+    }
+
+
+def metrics(r: dict, gen: dict | None = None) -> dict:
     tc, inject = r["tc"], r["inject_ms"]
     calls = [c for s in r["sessions"] for c in s["calls"]]
     kinds = [kind(c) for c in calls]
@@ -192,6 +226,7 @@ def metrics(r: dict) -> dict:
         "sequence": " > ".join(labels),
         "input_new": u["input_new"], "input_cache": u["input_cache_read"], "output": u["output"],
         "turns": u["turns"], "cost_usd": u["cost_usd"],
+        **speed(r, gen or {}),
     }
 
 
@@ -199,11 +234,12 @@ def num(v, d=1) -> str:
     return "–" if v is None else f"{v:,.{d}f}".replace(",", "_").replace(".", ",").replace("_", ".")
 
 
-def med_range(vals) -> str:
+def med_range(vals, d: int | None = None) -> str:
     v = [x for x in vals if isinstance(x, (int, float))]
     if not v:
         return "–"
-    d = 0 if all(isinstance(x, int) for x in v) and statistics.median(v) == int(statistics.median(v)) else 1
+    if d is None:
+        d = 0 if all(isinstance(x, int) for x in v) and statistics.median(v) == int(statistics.median(v)) else 1
     return f"{num(statistics.median(v), d)} ({num(min(v), d)}–{num(max(v), d)})"
 
 
@@ -229,6 +265,13 @@ def summarize(rows: list[dict]) -> dict:
         "token_out": med_range(r["output"] for r in rows),
         "biaya_rata_usd": num(statistics.mean(r["cost_usd"] for r in rows), 4),
         "biaya_total_usd": num(sum(r["cost_usd"] for r in rows), 4),
+        "panggilan_model": med_range(r["turns"] for r in rows),
+        "ttft_ms": med_range((r["ttft_ms"] for r in rows), 0),
+        "waktu_model_s": med_range(r["model_time_s"] for r in rows),
+        "tps_generasi": med_range(r["tps_gen"] for r in rows),
+        "tps_total": med_range(r["tps_total"] for r in rows),
+        "penyedia": ", ".join(f"{p} {c}" for p, c in Counter(
+            p for r in rows for p in r["provider"].split(",") if p).most_common()) or "–",
     }
 
 
@@ -243,16 +286,17 @@ def main():
     ap.add_argument("batches", nargs="+")
     ap.add_argument("--out")
     a = ap.parse_args()
-    results = []
+    results, gen = [], {}
     for b in a.batches:
         files = sorted((BATCHES / b / "results").glob("*.json"))
         if not files:
             sys.exit(f"tidak ada hasil di batch {b}")
         results += [json.loads(f.read_text()) for f in files]
+        gen |= load_generation(b)
     out = Path(a.out) if a.out else (BATCHES / a.batches[0] if len(a.batches) == 1 else ROOT / "benchmark/runs/analysis")
     out.mkdir(parents=True, exist_ok=True)
 
-    rows = sorted((metrics(r) for r in results), key=lambda m: (m["model"], m["tc"], m["level"], m["rep"]))
+    rows = sorted((metrics(r, gen) for r in results), key=lambda m: (m["model"], m["tc"], m["level"], m["rep"]))
     with open(out / "runs.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
         w.writeheader()
@@ -285,6 +329,16 @@ def main():
         [[k[0], k[1], k[2], s["tool_calls"], s["pola_lengkap"], s["baca_skill_tepat"], s["token_in"],
           s["token_cache"], s["token_out"]] for k, s in summ.items()]), "",
            "Pola lengkap = amati → bertindak → verifikasi (TC-02: amati saja, tanpa aksi).", ""]
+    have = sum(r["gen_calls"] for r in rows)
+    md += ["## Kecepatan model", "", md_table(
+        ["Model", "Level", "TC", "Panggilan model", "TTFT (ms)", "Waktu model (s)", "Token/detik generasi",
+         "Token/detik total", "Penyedia (jumlah run)"],
+        [[k[0], k[1], k[2], s["panggilan_model"], s["ttft_ms"], s["waktu_model_s"], s["tps_generasi"],
+          s["tps_total"], s["penyedia"]] for k, s in summ.items()]), "",
+           f"Data generation OpenRouter: {have}/{sum(r['turns'] for r in rows)} panggilan model"
+           + ("" if have else " (belum diunduh: `benchmark/openrouter_gen.py BATCH`)") + ". "
+           "Panggilan model per run; TTFT = median `latency` per run (token pertama = reasoning); "
+           "waktu model = jumlah `generation_time`; token/detik generasi tidak termasuk menunggu token pertama.", ""]
 
     md += ["## Perbandingan antarlevel", ""]
     for model in sorted({k[0] for k in keys}):

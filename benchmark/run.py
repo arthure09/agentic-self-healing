@@ -17,7 +17,9 @@ Satu run:
   6. tunggu alert padam (Prometheus ALERTS kosong) atau batas 10 menit
   7. tunggu semua sesi agent selesai (maks. 5 menit lagi), lalu snapshot kondisi nyata
   8. hentikan chaos, tulis event run_end, kumpulkan data mentah, simpan hasil
-Metrik dihitung terpisah oleh benchmark/analyze.py dari results/*.json.
+Metrik dihitung terpisah oleh benchmark/analyze.py dari results/*.json. Di akhir batch,
+data generation OpenRouter (TTFT, lama panggilan, penyedia) diunduh ke generation.jsonl
+(benchmark/openrouter_gen.py; bila gagal, jalankan ulang skrip itu).
 PROMPT_LEVEL di .env dikembalikan ke nilai awal dan stack di-reset di akhir batch,
 juga bila dihentikan dengan SIGTERM (tombol Hentikan di benchmark/web.py) atau Ctrl+C.
 """
@@ -37,6 +39,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from run_usage import DB, event_json, jsonl, usage  # noqa: E402
+import openrouter_gen  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 RUNS = ROOT / "benchmark" / "runs"
@@ -304,6 +307,11 @@ def main():
         phase("selesai")
     done = sum((out / "results" / f"{r['key']}.json").exists() for r in plan["runs"])
     log(f"batch {a.batch}: {done}/{len(plan['runs'])} run selesai")
+    try:  # data generation OpenRouter tidak wajib; gagal di sini tidak membatalkan batch
+        new, total, failed = openrouter_gen.fetch(a.batch)
+        log(f"data generation OpenRouter: {total - len(failed)}/{total} tersimpan" + (f", {len(failed)} gagal" if failed else ""))
+    except Exception as e:  # noqa: BLE001
+        log(f"data generation OpenRouter gagal diunduh ({e}); jalankan benchmark/openrouter_gen.py {a.batch}")
 
 
 if __name__ == "__main__":

@@ -555,3 +555,12 @@ Hanya nama yang bocor diganti; logika skill, struktur prompt, guardrail, allowli
   qwen-full-1: 2/120 run berlebih (noob TC-04, restart medusa-app). Analisis ulang di `batches/qwen-full-1/analisis-2026-10-13/` (file asli tidak ditimpa). Self-check: `benchmark/test_analyze.py`.
 - Label urutan aksi per pid menampilkan jumlah, mis. `pg-connections:terminate ×45`.
 - **`check_prompts.py`** gagal bila nama penyebab lama/baru atau kata "chaos" muncul di `prompts/`, `skills/*/SKILL.md`, atau workspace agent (`AGENTS.md`, `SOUL.md`, …, salinan skill).
+
+#### Uji coba setelah perbaikan: `qwen-uji-2` (Tahap 3, 2026-10-13)
+
+Qwen, 3 × 4 × 1, seed 2026, commit `93a6ecd`, dimulai lewat web 12:37–13:12. Tabel di `benchmark/runs/batches/qwen-uji-2/analysis.md`.
+- **12/12 berhasil**, aksi salah 0, aksi berlebih 1/12 (noob TC-04, restart medusa-app, sama seperti pola di qwen-full-1), 12/12 jujur, biaya $0,104.
+- **Kata "chaos": 0** di seluruh event transkrip sesi OpenClaw (12 sesi) dan di 66 baris `actions.jsonl` dalam jendela batch. (Skrip cek yang sama menemukan 384 kemunculan di `qwen-uji-1`.) Nama baru hanya muncul setelah agent memanggil tool, dan laporan agent menyebut penyebab dari pola data (mis. "report_export_worker dari host luar menahan 45 koneksi idle", "queue:export:jobs 10.000 elemen, 246 MB").
+- Agent tetap bisa menghapus penyebab: `terminate-app report_export_worker` dan `redis-memory delete queue:export:jobs` berhasil, tidak ditolak lindungan tool.
+- Waktu deteksi mirip qwen-full-1: TC-01 10,8–15,4 s (dulu 10,9–15,7), TC-02 3,4–6,1 s (1,5–6,6), TC-03 11,9–12,6 s (10,7–15,5), TC-04 11,8–14,4 s (9,5–14,1). Alert deadlock tetap muncul setelah container postgres dibuat ulang; tidak ada alert dari skenario lain.
+- Reset (membuat ulang container): median 40,3 s (36,1–41,2), dulu 39,6 s.
